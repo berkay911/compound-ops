@@ -86,7 +86,7 @@ const abortMission = defineAction({
   apply(store, r) {
     for (const p of phases(store)) {
       if (p.props.order < PHASE.EXFIL && p.props.status !== "Complete") {
-        store.update(p, { status: "Aborted" });
+        store.update(p, { status: "Aborted", endedAt: p.props.startedAt === null ? null : store.clockMs });
       }
     }
     for (const s of store.list("Structure")) {
@@ -163,7 +163,7 @@ const markCleared = defineAction({
     if (structures.every((x) => x.props.status === "Cleared")) {
       store.update(compound, { status: "Secured" });
       const assault = phaseByOrder(store, PHASE.ASSAULT);
-      if (assault?.props.status === "Active") store.update(assault, { status: "Complete" });
+      if (assault?.props.status === "Active") store.update(assault, { status: "Complete", endedAt: store.clockMs });
       store.log("system", `${compound.props.name} secured. Ready for Exfil.`, [compound.id]);
     }
   },

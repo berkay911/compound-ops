@@ -57,8 +57,20 @@ export function createTargets(): TruthTarget[] {
       true,
       "obj-falcon",
     ),
-    target("courtyard-guard", "Person", [{ x: 690, y: 300 }, { x: 640, y: 262 }], 1.0, true, "b4"),
-    target("roof-lookout", "Person", [{ x: 605, y: 282 }, { x: 660, y: 292 }], 0.6, true, "b1"),
+    target(
+      "courtyard-guard",
+      "Person",
+      [
+        { x: 690, y: 305 },
+        { x: 690, y: 262 },
+        { x: 645, y: 258 },
+        { x: 690, y: 262 },
+      ],
+      1.0,
+      true,
+      "b4",
+    ),
+    target("house-sentry", "Person", [{ x: 575, y: 280 }, { x: 575, y: 322 }], 0.6, true, "b1"),
     target("storage-sentry", "Person", [{ x: 668, y: 416 }, { x: 692, y: 419 }], 0.4, true, "b3"),
     target(
       "technical",

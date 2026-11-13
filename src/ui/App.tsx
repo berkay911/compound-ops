@@ -1,21 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import {
-  Button,
-  ButtonGroup,
-  Classes,
-  Navbar,
-  NavbarDivider,
-  NavbarGroup,
-  NavbarHeading,
-  Tag,
-} from "@blueprintjs/core";
+import { Button, Classes } from "@blueprintjs/core";
 import { OpsContext, createWorld, useOps, type World } from "./world";
 import { ObjectExplorer } from "./ObjectExplorer";
 import { MapView } from "./map/MapView";
 import { DetailPanel } from "./DetailPanel";
 import { EventFeed } from "./EventFeed";
+import { Timeline } from "./Timeline";
 import { PhaseBar } from "./PhaseBar";
-import { formatClock, statusIntent } from "./format";
+import { formatClock } from "./format";
 import { region } from "../ontology/queries";
 import { ACTIONS, type ActionParams } from "../ontology/actions";
 
@@ -68,9 +60,8 @@ export function App() {
   return (
     <OpsContext.Provider value={ctx}>
       <div className={`app ${Classes.DARK}`}>
-        <div className="banner">UNCLASSIFIED // EXERCISE EXERCISE EXERCISE // FICTIONAL SCENARIO</div>
+        <div className="banner">UNCLASSIFIED // EXERCISE // FICTIONAL SCENARIO</div>
         <TopBar running={running} setRunning={setRunning} speed={speed} setSpeed={setSpeed} reset={reset} />
-        <PhaseBar />
         <main className="workspace">
           <aside className="pane explorer">
             <ObjectExplorer />
@@ -82,10 +73,10 @@ export function App() {
             <DetailPanel />
           </aside>
         </main>
-        <footer className="pane feed">
+        <footer className="pane bottom">
+          <Timeline />
           <EventFeed />
         </footer>
-        <div className="banner">UNCLASSIFIED // EXERCISE EXERCISE EXERCISE // FICTIONAL SCENARIO</div>
       </div>
     </OpsContext.Provider>
   );
@@ -103,32 +94,32 @@ function TopBar({ running, setRunning, speed, setSpeed, reset }: TopBarProps) {
   const { store } = useOps();
   const r = region(store);
   return (
-    <Navbar className="topbar">
-      <NavbarGroup>
-        <NavbarHeading className="brand">COMPOUND OPS</NavbarHeading>
-        <NavbarDivider />
-        <span className="muted">{r.props.name}</span>
-        <Tag minimal intent={statusIntent(r.props.missionStatus)} className="ml">
-          {r.props.missionStatus}
-        </Tag>
-      </NavbarGroup>
-      <NavbarGroup align="right">
-        <span className="clock">{formatClock(store.clockMs)}</span>
-        <NavbarDivider />
-        <Button
-          variant="minimal"
-          icon={running ? "pause" : "play"}
-          text={running ? "Pause" : "Run"}
-          onClick={() => setRunning(!running)}
-        />
-        <ButtonGroup variant="minimal">
-          {SPEEDS.map((s) => (
-            <Button key={s} text={`${s}x`} active={speed === s} onClick={() => setSpeed(s)} />
-          ))}
-        </ButtonGroup>
-        <NavbarDivider />
-        <Button variant="minimal" icon="reset" text="Reset" onClick={reset} />
-      </NavbarGroup>
-    </Navbar>
+    <header className="topbar">
+      <span className="brand">COMPOUND OPS</span>
+      <span className="sep" />
+      <span className="crumb">{r.props.name}</span>
+      <span className="crumb dim">/</span>
+      <span className="crumb">OBJ FALCON</span>
+      <span className="mission">{r.props.missionStatus}</span>
+      <PhaseBar />
+      <span className="spacer" />
+      <span className="clock">{formatClock(store.clockMs)}</span>
+      <span className="sep" />
+      <Button
+        size="small"
+        variant="minimal"
+        icon={running ? "pause" : "play"}
+        onClick={() => setRunning(!running)}
+        aria-label={running ? "Pause" : "Run"}
+      />
+      <div className="speeds">
+        {SPEEDS.map((s) => (
+          <button key={s} className={speed === s ? "on" : ""} onClick={() => setSpeed(s)}>
+            {s}×
+          </button>
+        ))}
+      </div>
+      <Button size="small" variant="minimal" icon="reset" onClick={reset} aria-label="Reset" />
+    </header>
   );
 }

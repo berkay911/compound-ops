@@ -1,11 +1,21 @@
 import { useState } from "react";
-import { Button, HTMLSelect, HTMLTable, Icon, NonIdealState, Tag } from "@blueprintjs/core";
-import type { IconName } from "@blueprintjs/icons";
+import { Button, HTMLSelect } from "@blueprintjs/core";
 import { useOps } from "./world";
 import { OBJECT_TYPES, titleOf, type OntObject } from "../ontology/schema";
 import { actionsFor, type ActionDef, type ActionParams } from "../ontology/actions";
 import type { ResolvedLink } from "../ontology/store";
-import { formatValue, statusIntent } from "./format";
+import { formatClock, formatValue, toneOf } from "./format";
+
+const ACTIVITY_ROWS = 10;
+
+function identityOf(obj: OntObject): { label: string; cls: string } | null {
+  if (obj.type === "Track") {
+    const a = (obj as OntObject<"Track">).props.affiliation;
+    return { label: a.toUpperCase(), cls: a === "Hostile" ? "id-hostile" : "id-other" };
+  }
+  if (obj.type === "Unit" || obj.type === "Platform" || obj.type === "Sensor") return { label: "FRIENDLY", cls: "id-friend" };
+  return null;
+}
 
 export function DetailPanel() {
   const { store, selectedId } = useOps();
@@ -13,49 +23,47 @@ export function DetailPanel() {
 
   if (!obj) {
     return (
-      <NonIdealState
-        icon="select"
-        title="Nothing selected"
-        description="Pick an object on the map, in the ontology tree, or in the event feed."
-      />
+      <div className="inspector empty">
+        <div className="section-title">Inspector</div>
+        <div className="dim">Select an object on the map, in the ontology tree or on the timeline.</div>
+      </div>
     );
   }
 
   const def = OBJECT_TYPES[obj.type];
   const props = obj.props as unknown as Record<string, unknown>;
+  const identity = identityOf(obj);
 
   return (
-    <div className="detail-inner">
-      <div className="detail-header">
-        <Icon icon={def.icon as IconName} size={18} />
-        <div>
-          <div className="muted small">{def.displayName}</div>
-          <div className="detail-title">{titleOf(obj)}</div>
+    <div className="inspector">
+      <div className="insp-head">
+        <div className="insp-type">
+          {def.displayName}
+          <span className="insp-id">{obj.id}</span>
+        </div>
+        <div className="insp-title">
+          {titleOf(obj)}
+          {identity && <span className={`id-chip ${identity.cls}`}>{identity.label}</span>}
         </div>
       </div>
 
-      <div className="pane-title">Properties</div>
-      <HTMLTable compact className="props">
-        <tbody>
-          {def.properties.map((p) => (
-            <tr key={p.key}>
-              <td className="muted">{p.label}</td>
-              <td>
-                {p.format === "status" ? (
-                  <Tag minimal intent={statusIntent(props[p.key], p.key)}>
-                    {String(props[p.key])}
-                  </Tag>
-                ) : (
-                  formatValue(props[p.key], p.format)
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </HTMLTable>
+      <div className="section-title">Properties</div>
+      <dl className="kv">
+        {def.properties.map((p) => {
+          const value = props[p.key];
+          const text = p.format === "status" ? String(value) : formatValue(value, p.format);
+          return (
+            <div key={p.key} className="kv-row">
+              <dt>{p.label}</dt>
+              <dd className={p.format === "status" ? toneOf(value, p.key) : "mono"}>{text}</dd>
+            </div>
+          );
+        })}
+      </dl>
 
       <LinksSection obj={obj} />
       <ActionsSection obj={obj} />
+      <ActivitySection obj={obj} />
     </div>
   );
 }
@@ -67,28 +75,24 @@ function LinksSection({ obj }: { obj: OntObject }) {
     const key = `${link.def.id}:${link.direction}`;
     groups.set(key, [...(groups.get(key) ?? []), link]);
   }
-
+  if (groups.size === 0) return null;
   return (
     <>
-      <div className="pane-title">Links</div>
-      {groups.size === 0 && <div className="muted small">No links</div>}
-      {[...groups.entries()].map(([key, links]) => (
-        <div key={key} className="link-group">
-          <div className="muted small">{links[0].label}</div>
-          <div className="link-tags">
-            {links.map((l) => (
-              <Tag
-                key={l.other.id}
-                icon={OBJECT_TYPES[l.other.type].icon as IconName}
-                interactive
-                onClick={() => select(l.other.id)}
-              >
-                {titleOf(l.other)}
-              </Tag>
-            ))}
+      <div className="section-title">Links</div>
+      <dl className="kv">
+        {[...groups.entries()].map(([key, links]) => (
+          <div key={key} className="kv-row top">
+            <dt>{links[0].label}</dt>
+            <dd className="link-list">
+              {links.map((l) => (
+                <button key={l.other.id} className="link" onClick={() => select(l.other.id)}>
+                  {titleOf(l.other)}
+                </button>
+              ))}
+            </dd>
           </div>
-        </div>
-      ))}
+        ))}
+      </dl>
     </>
   );
 }
@@ -98,10 +102,12 @@ function ActionsSection({ obj }: { obj: OntObject }) {
   if (actions.length === 0) return null;
   return (
     <>
-      <div className="pane-title">Actions</div>
-      {actions.map((a) => (
-        <ActionRunner key={`${obj.id}:${a.id}`} action={a} target={obj} />
-      ))}
+      <div className="section-title">Actions</div>
+      <div className="actions">
+        {actions.map((a) => (
+          <ActionRunner key={`${obj.id}:${a.id}`} action={a} target={obj} />
+        ))}
+      </div>
     </>
   );
 }
@@ -114,13 +120,12 @@ function ActionRunner({ action, target }: { action: ActionDef; target: OntObject
   return (
     <div className="action">
       {action.params.map((p) => {
-        const options = store
-          .list(p.objectType)
-          .filter((o) => !p.filter || p.filter(store, o as OntObject));
+        const options = store.list(p.objectType).filter((o) => !p.filter || p.filter(store, o as OntObject));
         return (
           <HTMLSelect
             key={p.key}
             fill
+            minimal
             value={params[p.key] ?? ""}
             onChange={(e) => setParams({ ...params, [p.key]: e.currentTarget.value || undefined })}
           >
@@ -134,18 +139,38 @@ function ActionRunner({ action, target }: { action: ActionDef; target: OntObject
         );
       })}
       <Button
+        size="small"
+        variant="outlined"
         fill
         alignText="start"
-        intent={action.intent}
-        icon={action.icon as IconName}
         text={action.label}
+        title={reason ?? undefined}
         disabled={reason !== null}
         onClick={() => {
           action.apply(store, target, params);
           setParams({});
         }}
       />
-      {reason && <div className="muted small reason">{reason}</div>}
+      {reason && <div className="reason">{reason}</div>}
     </div>
+  );
+}
+
+function ActivitySection({ obj }: { obj: OntObject }) {
+  const { store } = useOps();
+  const rows = store.events.filter((e) => e.refs.includes(obj.id)).slice(-ACTIVITY_ROWS).reverse();
+  if (rows.length === 0) return null;
+  return (
+    <>
+      <div className="section-title">Activity</div>
+      <div className="activity">
+        {rows.map((e) => (
+          <div key={e.seq} className={`act-row ${e.kind === "warning" ? "warn" : ""}`}>
+            <span className="mono dim">{formatClock(e.timeMs)}</span>
+            <span>{e.text}</span>
+          </div>
+        ))}
+      </div>
+    </>
   );
 }

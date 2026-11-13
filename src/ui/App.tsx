@@ -11,7 +11,7 @@ import {
 } from "@blueprintjs/core";
 import { OpsContext, createWorld, useOps, type World } from "./world";
 import { ObjectExplorer } from "./ObjectExplorer";
-import { MapView } from "./MapView";
+import { MapView } from "./map/MapView";
 import { DetailPanel } from "./DetailPanel";
 import { EventFeed } from "./EventFeed";
 import { PhaseBar } from "./PhaseBar";
@@ -44,6 +44,7 @@ export function App() {
   return (
     <OpsContext.Provider value={ctx}>
       <div className={`app ${Classes.DARK}`}>
+        <div className="banner">UNCLASSIFIED // EXERCISE EXERCISE EXERCISE // FICTIONAL SCENARIO</div>
         <TopBar running={running} setRunning={setRunning} speed={speed} setSpeed={setSpeed} reset={reset} />
         <PhaseBar />
         <main className="workspace">
@@ -60,6 +61,7 @@ export function App() {
         <footer className="pane feed">
           <EventFeed />
         </footer>
+        <div className="banner">UNCLASSIFIED // EXERCISE EXERCISE EXERCISE // FICTIONAL SCENARIO</div>
       </div>
     </OpsContext.Provider>
   );

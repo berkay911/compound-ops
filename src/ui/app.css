@@ -15,7 +15,7 @@ body,
 
 .app {
   display: grid;
-  grid-template-rows: auto auto 1fr 190px;
+  grid-template-rows: auto auto auto 1fr 170px auto;
   height: 100vh;
   background: var(--bg);
   color: #f6f7f9;
@@ -95,7 +95,7 @@ body,
 
 .workspace {
   display: grid;
-  grid-template-columns: 280px 1fr 320px;
+  grid-template-columns: 270px 1fr 330px;
   min-height: 0;
 }
 
@@ -142,48 +142,13 @@ body,
 }
 
 .mapsvg {
-  width: 100%;
-  height: 100%;
+  display: block;
+  cursor: crosshair;
+  user-select: none;
+  touch-action: none;
 }
-
-.map-label {
-  fill: #c5cbd3;
-  font-size: 12px;
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  pointer-events: none;
-}
-
-.map-label.strong {
-  fill: #f6f7f9;
-  font-weight: 600;
-}
-
-.map-label.faint {
-  fill: #5f6b7c;
-}
-
-.lz-h {
-  fill: #f6f7f9;
-  font-size: 20px;
-  font-weight: 700;
-  pointer-events: none;
-}
-
 .clickable {
   cursor: pointer;
-}
-
-.pulse {
-  animation: pulse 1s ease-in-out infinite alternate;
-}
-
-@keyframes pulse {
-  from {
-    opacity: 1;
-  }
-  to {
-    opacity: 0.45;
-  }
 }
 
 .detail-header {
@@ -255,4 +220,503 @@ body,
 .feed-row .kind {
   min-width: 56px;
   text-align: center;
+}
+
+.banner {
+  background: #007a33;
+  color: #fff;
+  text-align: center;
+  font: 600 11px/18px ui-monospace, "SF Mono", Menlo, monospace;
+  letter-spacing: 0.14em;
+}
+
+.map-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: #0b0e10;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+.map-void {
+  fill: #0b0e10;
+}
+
+.contour {
+  fill: none;
+  stroke: #a07c45;
+  stroke-width: 0.6px;
+  opacity: 0.32;
+}
+
+.contour-index {
+  stroke-width: 1.1px;
+  opacity: 0.55;
+}
+
+.contour-label {
+  fill: #b48d55;
+  font-size: 8px;
+  opacity: 0.85;
+  paint-order: stroke;
+  stroke: #12171a;
+  stroke-width: 3px;
+}
+
+.wadi-bank {
+  fill: none;
+  stroke: #1c2f3a;
+  stroke-width: 9px;
+  stroke-linejoin: round;
+  opacity: 0.8;
+}
+
+.wadi {
+  fill: none;
+  stroke: #4f7f99;
+  stroke-width: 1.4px;
+  stroke-dasharray: 7 4 2 4;
+  stroke-linejoin: round;
+}
+
+.road-casing {
+  fill: none;
+  stroke: #0b0e10;
+  stroke-width: 6px;
+  stroke-linejoin: round;
+}
+
+.road {
+  fill: none;
+  stroke: #b39a6b;
+  stroke-width: 2.2px;
+  stroke-linejoin: round;
+}
+
+.terrain-label {
+  fill: #8d9aa6;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  paint-order: stroke;
+  stroke: #0b0e10;
+  stroke-width: 3px;
+}
+
+.terrain-label.italic {
+  font-style: italic;
+  fill: #6d9bb3;
+}
+
+.spot {
+  fill: #c9a46a;
+}
+
+.grid-line {
+  fill: none;
+  stroke: #4c6378;
+  stroke-width: 0.7px;
+  opacity: 0.45;
+}
+
+.grid-labels text {
+  fill: #9fb3c6;
+  paint-order: stroke;
+  stroke: #0b0e10;
+  stroke-width: 3px;
+}
+
+.range-ring {
+  fill: none;
+  stroke: #63c58b;
+  stroke-width: 0.8px;
+  stroke-dasharray: 2 5;
+  opacity: 0.45;
+}
+
+.range-label {
+  fill: #63c58b;
+  opacity: 0.7;
+}
+
+.sweep {
+  fill: #63c58b;
+  opacity: 0.07;
+}
+
+.sweep-edge {
+  stroke: #7ee0a3;
+  stroke-width: 1.4px;
+  opacity: 0.55;
+}
+
+.eo-fov {
+  fill: rgba(92, 225, 230, 0.04);
+  stroke: #5ce1e6;
+  stroke-width: 1.1px;
+  stroke-dasharray: 6 4;
+  opacity: 0.8;
+}
+
+.eo-los {
+  stroke: #5ce1e6;
+  stroke-width: 0.8px;
+  stroke-dasharray: 2 4;
+  opacity: 0.6;
+}
+
+.eo-label {
+  fill: #5ce1e6;
+}
+
+.wall {
+  fill: rgba(255, 255, 255, 0.025);
+  stroke: #d3d8de;
+  stroke-width: 2.6px;
+}
+
+.wall.secured {
+  fill: rgba(35, 133, 81, 0.12);
+}
+
+.wall.selected {
+  stroke: #fff;
+  stroke-width: 3.6px;
+}
+
+.gate {
+  fill: #0b0e10;
+  stroke: #d3d8de;
+  stroke-width: 0.8;
+}
+
+.gate.in-use {
+  fill: #80e0ff;
+}
+
+.gate-label {
+  fill: #9aa6b2;
+  font-weight: 700;
+}
+
+.gate-label.in-use {
+  fill: #80e0ff;
+}
+
+.bldg {
+  stroke: #9aa3ad;
+  stroke-width: 1.2px;
+  fill: #2d343c;
+}
+
+.bldg.clearing {
+  fill: #8a5a12;
+}
+
+.bldg.clear-reported {
+  fill: #c87619;
+  animation: pulse 0.9s ease-in-out infinite alternate;
+}
+
+.bldg.cleared {
+  fill: #1f6b43;
+}
+
+.bldg.threat-possible {
+  stroke: #ffb347;
+  stroke-width: 2.2px;
+  stroke-dasharray: 5 3;
+}
+
+.bldg.threat-confirmed {
+  stroke: #ff5a5a;
+  stroke-width: 2.6px;
+}
+
+.bldg.selected {
+  stroke: #fff;
+  stroke-width: 3px;
+  stroke-dasharray: none;
+}
+
+@keyframes pulse {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0.45;
+  }
+}
+
+.bldg-label {
+  fill: #f2f5f8;
+  font-size: 11px;
+  font-weight: 700;
+  pointer-events: none;
+  paint-order: stroke;
+  stroke: #0b0e10;
+  stroke-width: 2.5px;
+}
+
+.cm-line {
+  fill: none;
+  stroke: #e8ecf0;
+  stroke-width: 1.5px;
+  opacity: 0.85;
+}
+
+.cm-line.dashed {
+  stroke-dasharray: 6 4;
+}
+
+.cm-dot {
+  fill: #e8ecf0;
+}
+
+.cm-air {
+  fill: none;
+  stroke: #80e0ff;
+  stroke-width: 1.3px;
+  stroke-dasharray: 10 4 2 4;
+  opacity: 0.75;
+}
+
+.cm-label {
+  fill: #e8ecf0;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  paint-order: stroke;
+  stroke: #0b0e10;
+  stroke-width: 3px;
+}
+
+.cm-label.strong {
+  font-weight: 700;
+  font-size: 11px;
+}
+
+.cm-label.air {
+  fill: #80e0ff;
+}
+
+.route {
+  fill: none;
+  stroke: #80e0ff;
+  stroke-width: 1.4px;
+  stroke-dasharray: 4 4;
+  opacity: 0.85;
+}
+
+.route.air {
+  stroke-dasharray: 10 4 2 4;
+  opacity: 0.6;
+}
+
+.plot-radar {
+  stroke: #ffb347;
+  stroke-width: 1.4;
+  fill: none;
+}
+
+.plot-eo {
+  fill: #5ce1e6;
+}
+
+.plot-bft {
+  fill: #4c90f0;
+}
+
+.ellipse {
+  fill-opacity: 0.08;
+  stroke-width: 1.1px;
+  stroke-opacity: 0.9;
+}
+
+.ellipse.coasting {
+  stroke-dasharray: 4 3;
+}
+
+.leader {
+  stroke-width: 1.5px;
+}
+
+.truth path {
+  stroke: #fff;
+  stroke-width: 1.5;
+}
+
+.truth text {
+  fill: #fff;
+  font-size: 9px;
+  opacity: 0.8;
+}
+
+.sym-label {
+  fill: #eef2f6;
+  paint-order: stroke;
+  stroke: #0b0e10;
+  stroke-width: 3px;
+  pointer-events: none;
+}
+
+.sym-label-main {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.sym-label-sub {
+  font-size: 9.5px;
+  fill: #aab6c2;
+}
+
+.lz-h {
+  font-size: 17px;
+  font-weight: 800;
+  pointer-events: none;
+}
+
+.sel-bracket {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 2;
+}
+
+.hud {
+  position: absolute;
+  color: #c9d3dc;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  pointer-events: none;
+}
+
+.hud > * {
+  pointer-events: auto;
+}
+
+.hud-title {
+  color: #fff;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  margin-bottom: 2px;
+}
+
+.hud-tl {
+  top: 26px;
+  left: 44px;
+  background: rgba(11, 14, 16, 0.78);
+  border: 1px solid #2f3a44;
+  padding: 6px 9px;
+}
+
+.hud-tr {
+  top: 10px;
+  right: 10px;
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  flex-direction: row-reverse;
+}
+
+.hud-buttons {
+  background: rgba(11, 14, 16, 0.85);
+  border: 1px solid #2f3a44;
+}
+
+.layers-panel {
+  background: rgba(11, 14, 16, 0.92);
+  border: 1px solid #2f3a44;
+  padding: 8px 10px 4px;
+  min-width: 210px;
+}
+
+.layers-panel .bp6-control {
+  margin-bottom: 4px;
+  font-size: 11.5px;
+}
+
+.legend {
+  border-top: 1px solid #2f3a44;
+  padding: 6px 0 4px;
+  color: #9aa6b2;
+}
+
+.lg-radar {
+  color: #ffb347;
+  font-weight: 700;
+}
+
+.lg-eo {
+  color: #5ce1e6;
+}
+
+.lg-bft {
+  color: #4c90f0;
+}
+
+.hud-bl {
+  bottom: 10px;
+  left: 10px;
+  background: rgba(11, 14, 16, 0.78);
+  border: 1px solid #2f3a44;
+  padding: 5px 9px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-br {
+  bottom: 10px;
+  right: 10px;
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  background: rgba(11, 14, 16, 0.78);
+  border: 1px solid #2f3a44;
+  padding: 6px 10px;
+}
+
+.north path {
+  fill: #e8ecf0;
+}
+
+.north text {
+  fill: #e8ecf0;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.scalebar-bar {
+  height: 6px;
+  border: 1px solid #e8ecf0;
+  background: #0b0e10;
+  display: flex;
+}
+
+.scalebar-bar span {
+  background: #e8ecf0;
+  height: 100%;
+}
+
+.scalebar-text {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 2px;
+}
+
+.hud-friend-key {
+  bottom: 44px;
+  left: 10px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(11, 14, 16, 0.78);
+  border: 1px solid #2f3a44;
+  padding: 4px 8px;
+}
+
+.hud-friend-key span {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-left: 4px;
+  border: 1px solid #07090b;
 }

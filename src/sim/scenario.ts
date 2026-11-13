@@ -1,4 +1,5 @@
 import type { OntologyStore } from "../ontology/store";
+import { EO, RADAR } from "./sensors";
 
 export const MAP = { width: 1000, height: 700 } as const;
 
@@ -29,9 +30,9 @@ export function loadScenario(store: OntologyStore): void {
       { x: 526, y: 434 },
     ],
     gates: [
-      { name: "North gate", pos: { x: 630, y: 241 } },
-      { name: "South gate", pos: { x: 634, y: 431 } },
-      { name: "West gate", pos: { x: 523, y: 340 } },
+      { name: "North gate", pos: { x: 630, y: 241 }, outer: { x: 630, y: 218 }, inner: { x: 630, y: 257 } },
+      { name: "South gate", pos: { x: 634, y: 431 }, outer: { x: 634, y: 452 }, inner: { x: 634, y: 414 } },
+      { name: "West gate", pos: { x: 523, y: 340 }, outer: { x: 500, y: 340 }, inner: { x: 541, y: 340 } },
     ],
   });
   store.link("regionCompound", region.id, compound.id);
@@ -43,7 +44,6 @@ export function loadScenario(store: OntologyStore): void {
       floors: 2,
       rect: { x: 585, y: 268, w: 95, h: 60 },
       door: { x: 632, y: 332 },
-      breachPoint: { x: 634, y: 452 },
     },
     {
       id: "b2",
@@ -51,7 +51,6 @@ export function loadScenario(store: OntologyStore): void {
       floors: 1,
       rect: { x: 545, y: 360, w: 55, h: 45 },
       door: { x: 604, y: 382 },
-      breachPoint: { x: 500, y: 340 },
     },
     {
       id: "b3",
@@ -59,7 +58,6 @@ export function loadScenario(store: OntologyStore): void {
       floors: 1,
       rect: { x: 680, y: 352, w: 45, h: 55 },
       door: { x: 676, y: 380 },
-      breachPoint: { x: 660, y: 452 },
     },
     {
       id: "b4",
@@ -67,7 +65,6 @@ export function loadScenario(store: OntologyStore): void {
       floors: 1,
       rect: { x: 698, y: 255, w: 26, h: 26 },
       door: { x: 711, y: 285 },
-      breachPoint: { x: 640, y: 220 },
     },
   ];
   for (const s of structures) {
@@ -78,7 +75,6 @@ export function loadScenario(store: OntologyStore): void {
       threat: "None",
       rect: s.rect,
       door: s.door,
-      breachPoint: s.breachPoint,
       clearingSince: null,
     });
     store.link("compoundStructure", compound.id, s.id);
@@ -96,7 +92,7 @@ export function loadScenario(store: OntologyStore): void {
     status: "Staged",
     fuel: 100,
     altitudeFt: 0,
-    pos: { x: fob.x, y: fob.y - 12 },
+    pos: { x: fob.x - 8, y: fob.y - 20 },
     waypoint: null,
     landedAt: null,
   });
@@ -106,7 +102,7 @@ export function loadScenario(store: OntologyStore): void {
     status: "Staged",
     fuel: 100,
     altitudeFt: 0,
-    pos: { x: fob.x + 14, y: fob.y + 10 },
+    pos: { x: fob.x + 22, y: fob.y + 18 },
     waypoint: null,
     landedAt: null,
   });
@@ -138,11 +134,38 @@ export function loadScenario(store: OntologyStore): void {
       pos: { ...lift.props.pos },
       waypoint: null,
       overwatchPos: u.role === "Overwatch" ? { x: 470, y: 205 } : null,
+      entryGate: null,
+      route: [],
+      routeGoal: null,
     });
     store.link("unitLift", u.id, u.lift);
     store.link("platformCarries", u.lift, u.id);
     if (u.objective) store.link("unitObjective", u.id, u.objective);
   }
+
+  store.add("Sensor", RADAR.id, {
+    name: RADAR.name,
+    kind: "Ground radar",
+    status: "Operational",
+    pos: { ...RADAR.pos },
+    rangeM: RADAR.maxRange,
+    scanPeriodS: RADAR.periodS,
+    accuracy: `σr ${RADAR.sigmaR} m, σθ ${((RADAR.sigmaTheta * 180) / Math.PI).toFixed(1)}°`,
+    sweepDeg: 0,
+    footprint: null,
+  });
+  store.add("Sensor", EO.id, {
+    name: EO.name,
+    kind: "EO/IR",
+    status: "Operational",
+    pos: { x: 630, y: 165 },
+    rangeM: EO.radius,
+    scanPeriodS: EO.periodS,
+    accuracy: `σ ${EO.sigma} m`,
+    sweepDeg: null,
+    footprint: { center: { ...EO.stare }, radius: EO.radius },
+  });
+  store.link("sensorPlatform", EO.id, "overwatch-1");
 
   store.log("system", "Scenario loaded: AO GRANITE / OBJ FALCON. Start P1 Infil when ready.", [region.id]);
 }

@@ -5,11 +5,19 @@ import { useOps } from "./world";
 import { OBJECT_TYPES, TYPE_ORDER, titleOf, type ObjectTypeId, type OntObject } from "../ontology/schema";
 import { statusIntent } from "./format";
 
-function statusOf(obj: OntObject): string | undefined {
+function statusOf(obj: OntObject): { value: string; key: string } | undefined {
+  if (obj.type === "Track") {
+    const t = obj as OntObject<"Track">;
+    return t.props.affiliation === "Unknown"
+      ? { value: t.props.status, key: "status" }
+      : { value: t.props.affiliation, key: "affiliation" };
+  }
   const props = obj.props as unknown as Record<string, unknown>;
   const s = props.status ?? props.missionStatus;
-  return s === undefined ? undefined : String(s);
+  return s === undefined ? undefined : { value: String(s), key: "status" };
 }
+
+const TRACK_RANK = { Confirmed: 0, Coasting: 1, Tentative: 2 };
 
 export function ObjectExplorer() {
   const { store, selectedId, select } = useOps();
@@ -18,8 +26,10 @@ export function ObjectExplorer() {
   const contents: TreeNodeInfo<string>[] = TYPE_ORDER.map((type) => {
     const def = OBJECT_TYPES[type];
     let objects: OntObject[] = store.list(type);
-    if (type === "Observation") {
-      objects = [...objects].reverse();
+    if (type === "Track") {
+      objects = [...(objects as OntObject<"Track">[])].sort(
+        (a, b) => TRACK_RANK[a.props.status] - TRACK_RANK[b.props.status] || a.props.label.localeCompare(b.props.label),
+      );
     }
     return {
       id: `type:${type}`,
@@ -37,8 +47,8 @@ export function ObjectExplorer() {
           isSelected: obj.id === selectedId,
           nodeData: obj.id,
           secondaryLabel: status ? (
-            <Tag minimal intent={statusIntent(status)}>
-              {status}
+            <Tag minimal intent={statusIntent(status.value, status.key)}>
+              {status.value}
             </Tag>
           ) : undefined,
         };

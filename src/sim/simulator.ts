@@ -1,4 +1,4 @@
-import type { OntObject, Point } from "../ontology/schema";
+import type { OntObject, Point, UnitStatus } from "../ontology/schema";
 import type { OntologyStore } from "../ontology/store";
 import {
   PHASE,
@@ -12,6 +12,21 @@ import {
   phases,
   region,
 } from "../ontology/queries";
+import { mulberry32, poisson } from "./random";
+import { createTargets, moveTarget, type TruthTarget } from "./targets";
+import {
+  EO,
+  RADAR,
+  angleInSweep,
+  eoMeasure,
+  eoPlot,
+  inEoFootprint,
+  radarMeasure,
+  radarPlot,
+  type RawDetection,
+} from "./sensors";
+import { Tracker } from "./tracker";
+import { entryGate, planRoute } from "./routing";
 
 const HELO_SPEED = 18;
 const UNIT_SPEED = 11;
@@ -19,26 +34,11 @@ const ARRIVE = 3;
 const OFFLOAD_MS = 4000;
 const CLEAR_MS_PER_FLOOR = 9000;
 const ORBIT = { center: { x: 632, y: 336 }, radius: 175, rate: 0.12 };
-
-const OBSERVATION_POOL = [
-  "2 PAX on roof",
-  "Movement behind window",
-  "Thermal signature, 1 PAX",
-  "Door opened, PAX re-entered",
-  "Interior light switched off",
-  "PAX carrying long object",
-];
-
-function mulberry32(seed: number): () => number {
-  let a = seed;
-  return () => {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+const LZ_ALERT_RANGE_M = 450;
+const LZ_CLOSE_RANGE_M = 120;
+const LZ_CLOSING_MPS = 3;
+const LANDING_THREAT_RANGE_M = 150;
+const TWO_PI = Math.PI * 2;
 
 function moveToward(pos: Point, target: Point, step: number): boolean {
   const d = dist(pos, target);
@@ -52,23 +52,22 @@ function moveToward(pos: Point, target: Point, step: number): boolean {
   return false;
 }
 
-function insidePolygon(p: Point, poly: Point[]): boolean {
-  let inside = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const a = poly[i];
-    const b = poly[j];
-    if (a.y > p.y !== b.y > p.y && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
-  }
-  return inside;
+function samePoint(a: Point | null, b: Point): boolean {
+  return a !== null && a.x === b.x && a.y === b.y;
 }
 
 export class Simulator {
+  readonly targets: TruthTarget[] = createTargets();
+  readonly tracker: Tracker;
   private rng = mulberry32(1337);
   private orbitAngle = -Math.PI / 2;
-  private nextObservationAt = 6000;
-  private lzThreatInjected = false;
+  private radarAngle = 0;
+  private nextEoScanMs = 0;
+  private alerted = new Set<string>();
 
-  constructor(private store: OntologyStore) {}
+  constructor(private store: OntologyStore) {
+    this.tracker = new Tracker(store, { [RADAR.id]: RADAR.name, [EO.id]: EO.name });
+  }
 
   tick(dtMs: number): void {
     const store = this.store;
@@ -79,22 +78,27 @@ export class Simulator {
     this.updateUnits(dt);
     this.updateStructures();
     this.updateUav(dt);
-    this.produceObservations();
+    this.updateTargets(dt);
+    this.runRadar(dt);
+    this.runEo();
+    this.tracker.maintain(store.clockMs, this.truthPos);
+    this.trackAlerts();
     this.checkPhases();
     store.touch();
   }
 
-  private landingSpot(platform: OntObject<"Platform">, lz: OntObject<"LandingZone">): Point {
-    const helos = this.store.list("Platform").filter((p) => p.props.kind === "Helicopter");
-    const i = helos.findIndex((p) => p.id === platform.id);
-    return { x: lz.props.pos.x + (i === 0 ? -14 : 14), y: lz.props.pos.y };
-  }
+  truthPos = (id: string): Point | undefined => this.targets.find((t) => t.id === id && t.active)?.pos;
 
-  private liftUnitsAboard(platform: OntObject<"Platform">): boolean {
+  private friendlyPositions(): { id: string; pos: Point }[] {
     const store = this.store;
-    return store
-      .linked<"Unit">(platform.id, "unitLift", "reverse")
-      .every((u) => carrierOf(store, u)?.id === platform.id || u.props.status === "Extracted");
+    const out: { id: string; pos: Point }[] = [];
+    for (const u of store.list("Unit")) {
+      if (!carrierOf(store, u) && u.props.status !== "Extracted") out.push({ id: `friendly:${u.id}`, pos: u.props.pos });
+    }
+    for (const p of store.list("Platform")) {
+      if (p.props.kind === "Helicopter" && p.props.altitudeFt === 0) out.push({ id: `friendly:${p.id}`, pos: p.props.pos });
+    }
+    return out;
   }
 
   private updateHelicopters(dt: number): void {
@@ -125,11 +129,12 @@ export class Simulator {
             break;
           }
           if (!lz) break;
-          const spot = this.landingSpot(helo, lz);
+          const spot = this.offsetSpot(helo, lz.props.pos);
           store.update(helo, { waypoint: spot, altitudeFt: 400 });
           if (moveToward(p.pos, spot, HELO_SPEED * dt)) {
             store.update(helo, { status: "Landed", landedAt: store.clockMs, altitudeFt: 0, waypoint: null });
             store.log("sim", `${p.callsign} landed at ${lz.props.name}`, [helo.id, lz.id]);
+            this.warnLandingThreat(helo, lz);
             if (!exfil) this.offload(helo, lz);
           }
           break;
@@ -142,26 +147,26 @@ export class Simulator {
               store.log("sim", `${p.callsign} lifting off with ${carrying.map((u) => u.props.callsign).join(", ")}`, [helo.id]);
             }
           } else if (carrying.length === 0 && store.clockMs - (p.landedAt ?? 0) > OFFLOAD_MS) {
-            store.update(helo, { status: "Holding", waypoint: r.props.holdingArea });
+            store.update(helo, { status: "Holding", waypoint: this.offsetSpot(helo, r.props.holdingArea, "base") });
             store.log("sim", `${p.callsign} departing to holding area`, [helo.id]);
           }
           break;
 
-        case "Holding":
+        case "Holding": {
           if (exfil) {
             store.update(helo, { status: "Inbound" });
             store.log("sim", `${p.callsign} inbound ${lz?.props.name ?? "?"} for pickup`, [helo.id]);
             break;
           }
           if (p.waypoint === null) break;
-          store.update(helo, { waypoint: r.props.holdingArea, altitudeFt: 500 });
-          if (moveToward(p.pos, r.props.holdingArea, HELO_SPEED * dt)) {
-            store.update(helo, { waypoint: null, altitudeFt: 0 });
-          }
+          const spot = this.offsetSpot(helo, r.props.holdingArea, "base");
+          store.update(helo, { waypoint: spot, altitudeFt: 500 });
+          if (moveToward(p.pos, spot, HELO_SPEED * dt)) store.update(helo, { waypoint: null, altitudeFt: 0 });
           break;
+        }
 
         case "Egress": {
-          const home = { x: r.props.fob.x + (helo.id === "dusty-1" ? 0 : 14), y: r.props.fob.y };
+          const home = this.offsetSpot(helo, r.props.fob, "base");
           store.update(helo, { waypoint: home, altitudeFt: 400 });
           if (moveToward(p.pos, home, HELO_SPEED * dt)) {
             store.update(helo, { status: "RTB complete", waypoint: null, altitudeFt: 0 });
@@ -179,6 +184,33 @@ export class Simulator {
     }
   }
 
+  private offsetSpot(platform: OntObject<"Platform">, at: Point, spread: "pad" | "base" = "pad"): Point {
+    const helos = this.store.list("Platform").filter((p) => p.props.kind === "Helicopter");
+    const first = helos.findIndex((p) => p.id === platform.id) === 0;
+    if (spread === "base") return first ? { x: at.x - 8, y: at.y - 20 } : { x: at.x + 22, y: at.y + 18 };
+    return { x: at.x + (first ? -14 : 14), y: at.y };
+  }
+
+  private liftUnitsAboard(platform: OntObject<"Platform">): boolean {
+    const store = this.store;
+    return store
+      .linked<"Unit">(platform.id, "unitLift", "reverse")
+      .every((u) => carrierOf(store, u)?.id === platform.id || u.props.status === "Extracted");
+  }
+
+  private warnLandingThreat(helo: OntObject<"Platform">, lz: OntObject<"LandingZone">): void {
+    for (const t of this.store.list("Track")) {
+      if (t.props.status === "Tentative" || t.props.affiliation === "Neutral") continue;
+      const d = dist(t.props.pos, lz.props.pos);
+      if (d < LANDING_THREAT_RANGE_M) {
+        this.store.log("warning", `${helo.props.callsign} on the ground with ${t.props.label} ${Math.round(d)} m from ${lz.props.name}`, [
+          helo.id,
+          t.id,
+        ]);
+      }
+    }
+  }
+
   private offload(helo: OntObject<"Platform">, lz: OntObject<"LandingZone">): void {
     const store = this.store;
     const units = store.linked<"Unit">(helo.id, "platformCarries");
@@ -186,34 +218,32 @@ export class Simulator {
       store.unlink("platformCarries", helo.id, u.id);
       store.update(u, {
         status: "On ground",
-        pos: { x: helo.props.pos.x + (i - (units.length - 1) / 2) * 10, y: helo.props.pos.y - 14 },
+        pos: { x: helo.props.pos.x + (i - (units.length - 1) / 2) * 12, y: helo.props.pos.y - 14 },
+        route: [],
+        routeGoal: null,
       });
       store.log("sim", `${u.props.callsign} on the ground at ${lz.props.name}`, [u.id, lz.id]);
     });
   }
 
-  private unitGoal(unit: OntObject<"Unit">): { goal: Point | null; arrivedStatus: OntObject<"Unit">["props"]["status"] } {
+  private unitGoal(unit: OntObject<"Unit">): { goal: Point | null; arrivedStatus: UnitStatus } {
     const store = this.store;
     const order = activePhase(store)?.props.order;
     const objective = objectiveOf(store, unit);
+    const compound = store.list("Compound")[0];
 
-    if (order === PHASE.APPROACH) {
-      if (unit.props.role === "Overwatch") return { goal: unit.props.overwatchPos, arrivedStatus: "In position" };
-      if (objective) return { goal: objective.props.breachPoint, arrivedStatus: "In position" };
-      return { goal: null, arrivedStatus: "Holding" };
-    }
-
-    if (order === PHASE.ASSAULT) {
+    if (order === PHASE.APPROACH || order === PHASE.ASSAULT) {
       if (unit.props.role === "Overwatch") return { goal: unit.props.overwatchPos, arrivedStatus: "In position" };
       if (!objective) return { goal: null, arrivedStatus: "Holding" };
-      const compound = store.list("Compound")[0];
-      const outside = compound && !insidePolygon(unit.props.pos, compound.props.wall);
-      const door = objective.props.door;
-      const wp = unit.props.waypoint;
-      const headingToDoor = wp !== null && wp.x === door.x && wp.y === door.y;
-      const atBreach = dist(unit.props.pos, objective.props.breachPoint) <= ARRIVE;
-      if (outside && !atBreach && !headingToDoor) return { goal: objective.props.breachPoint, arrivedStatus: "Moving" };
-      return { goal: objective.props.door, arrivedStatus: "Assaulting" };
+      if (order === PHASE.ASSAULT) return { goal: objective.props.door, arrivedStatus: "Assaulting" };
+      if (!compound) return { goal: null, arrivedStatus: "Holding" };
+      let gate = compound.props.gates.find((g) => g.name === unit.props.entryGate);
+      if (!gate) {
+        gate = entryGate(compound.props.gates, unit.props.pos, objective.props.door);
+        store.update(unit, { entryGate: gate.name });
+        store.log("sim", `${unit.props.callsign} routing to ${gate.name} for ${objective.props.name}`, [unit.id]);
+      }
+      return { goal: gate.outer, arrivedStatus: "In position" };
     }
 
     if (order === PHASE.EXFIL) {
@@ -223,6 +253,35 @@ export class Simulator {
     }
 
     return { goal: null, arrivedStatus: unit.props.status === "On ground" ? "On ground" : "Holding" };
+  }
+
+  private moveUnit(unit: OntObject<"Unit">, goal: Point, dt: number): boolean {
+    const store = this.store;
+    const p = unit.props;
+    if (!samePoint(p.routeGoal, goal)) {
+      const compound = store.list("Compound")[0];
+      const route = compound
+        ? planRoute(compound.props.wall, compound.props.gates, p.pos, goal, p.entryGate)
+        : [{ ...goal }];
+      store.update(unit, { route, routeGoal: { ...goal } });
+    }
+    let step = UNIT_SPEED * dt;
+    while (step > 0 && p.route.length > 0) {
+      const next = p.route[0];
+      const d = dist(p.pos, next);
+      if (d <= Math.max(step, 0.01)) {
+        p.pos.x = next.x;
+        p.pos.y = next.y;
+        step -= d;
+        p.route.shift();
+      } else {
+        p.pos.x += ((next.x - p.pos.x) / d) * step;
+        p.pos.y += ((next.y - p.pos.y) / d) * step;
+        step = 0;
+      }
+    }
+    store.update(unit, { waypoint: p.route[p.route.length - 1] ?? null });
+    return p.route.length === 0;
   }
 
   private updateUnits(dt: number): void {
@@ -243,11 +302,9 @@ export class Simulator {
         if (unit.props.status !== arrivedStatus) store.update(unit, { status: arrivedStatus, waypoint: null });
         continue;
       }
-      store.update(unit, { waypoint: { ...goal } });
-      const arrived = moveToward(unit.props.pos, goal, UNIT_SPEED * dt);
+      const arrived = this.moveUnit(unit, goal, dt);
       const status = arrived ? arrivedStatus : "Moving";
       if (unit.props.status !== status) store.update(unit, { status });
-
       if (arrived && exfil) this.tryEmbark(unit);
     }
   }
@@ -297,64 +354,111 @@ export class Simulator {
       uav.props.pos.x = ORBIT.center.x + ORBIT.radius * Math.cos(this.orbitAngle);
       uav.props.pos.y = ORBIT.center.y + ORBIT.radius * Math.sin(this.orbitAngle);
       uav.props.fuel = Math.max(0, uav.props.fuel - 0.02 * dt);
+      for (const sensor of store.linked<"Sensor">(uav.id, "sensorPlatform", "reverse")) {
+        sensor.props.pos = { ...uav.props.pos };
+      }
     }
   }
 
-  private addObservation(
-    summary: string,
-    confidence: OntObject<"Observation">["props"]["confidence"],
-    pos: Point,
-    subject: { structure?: string; lz?: string },
-  ): void {
+  private updateTargets(dt: number): void {
     const store = this.store;
-    const uav = store.list("Platform").find((p) => p.props.kind === "UAV");
-    const id = store.nextId("obs");
-    store.add("Observation", id, { summary, confidence, status: "New", timeMs: store.clockMs, pos });
-    if (uav) store.link("observationSource", id, uav.id);
-    if (subject.structure) store.link("observationStructure", id, subject.structure);
-    if (subject.lz) store.link("observationLz", id, subject.lz);
-    store.log("sim", `${uav?.props.callsign ?? "UAV"}: ${summary} (${confidence})`, [id]);
+    const infilStarted = phaseByOrder(store, PHASE.INFIL)?.props.startedAt != null;
+    for (const t of this.targets) {
+      if (!t.active && t.activation === "infil" && infilStarted && t.speed > 0) t.active = true;
+      if (t.active && t.boundTo) {
+        const bound = store.get(t.boundTo);
+        const neutralized =
+          (bound?.type === "Structure" && (bound as OntObject<"Structure">).props.status === "Cleared") ||
+          (bound?.type === "Compound" && (bound as OntObject<"Compound">).props.status === "Secured");
+        if (neutralized) t.active = false;
+      }
+      moveTarget(t, dt);
+    }
   }
 
-  private produceObservations(): void {
+  private runRadar(dt: number): void {
     const store = this.store;
-    if (region(store).props.missionStatus !== "In progress") return;
-
-    const infil = phaseByOrder(store, PHASE.INFIL);
-    const raven = store.get("hlz-raven") as OntObject<"LandingZone"> | undefined;
-    if (
-      !this.lzThreatInjected &&
-      infil?.props.status === "Active" &&
-      infil.props.startedAt !== null &&
-      store.clockMs - infil.props.startedAt > 3000 &&
-      raven
-    ) {
-      this.lzThreatInjected = true;
-      this.addObservation(
-        "Vehicle with 3 PAX moving toward HLZ RAVEN",
-        "High",
-        { x: raven.props.pos.x + 40, y: raven.props.pos.y - 45 },
-        { lz: raven.id },
-      );
+    const span = Math.min(TWO_PI, (TWO_PI * dt) / RADAR.periodS);
+    const from = this.radarAngle;
+    const detections: RawDetection[] = [];
+    const observed = [
+      ...this.targets.filter((t) => t.active).map((t) => ({ id: t.id, pos: t.pos, pd: RADAR.pd[t.kind] })),
+      ...this.friendlyPositions().map((f) => ({ ...f, pd: RADAR.pd.Person })),
+    ];
+    for (const o of observed) {
+      const dx = o.pos.x - RADAR.pos.x;
+      const dy = o.pos.y - RADAR.pos.y;
+      const range = Math.hypot(dx, dy);
+      if (range < RADAR.minRange || range > RADAR.maxRange) continue;
+      if (!angleInSweep(Math.atan2(dy, dx), from, span)) continue;
+      if (this.rng() < o.pd) detections.push(radarMeasure(this.rng, o.pos, store.clockMs, o.id));
     }
-
-    if (store.clockMs < this.nextObservationAt) return;
-    this.nextObservationAt = store.clockMs + 9000 + this.rng() * 6000;
-
-    const candidates = store.list("Structure").filter((s) => s.props.status !== "Cleared");
-    if (candidates.length === 0) return;
-    const s = candidates[Math.floor(this.rng() * candidates.length)];
-    const text = OBSERVATION_POOL[Math.floor(this.rng() * OBSERVATION_POOL.length)];
-    const roll = this.rng();
-    const confidence = roll > 0.75 ? "High" : roll > 0.35 ? "Medium" : "Low";
-    const r = s.props.rect;
-    this.addObservation(
-      `${text} at ${s.props.name.split(" ")[0]}`,
-      confidence,
-      { x: r.x + r.w / 2 + (this.rng() - 0.5) * 20, y: r.y + r.h / 2 + (this.rng() - 0.5) * 20 },
-      { structure: s.id },
+    const falseAlarms = poisson(this.rng, (RADAR.falseAlarmsPerScan * span) / TWO_PI);
+    for (let i = 0; i < falseAlarms; i++) {
+      const r = RADAR.minRange + this.rng() * (RADAR.maxRange - RADAR.minRange);
+      detections.push(radarPlot(r, from + this.rng() * span, store.clockMs, null));
+    }
+    this.radarAngle = (from + span) % TWO_PI;
+    const sensor = store.get(RADAR.id) as OntObject<"Sensor"> | undefined;
+    if (sensor) sensor.props.sweepDeg = ((this.radarAngle * 180) / Math.PI + 90) % 360;
+    this.tracker.ingest(
+      detections,
+      store.clockMs,
+      this.friendlyPositions().map((f) => f.pos),
+      this.truthPos,
     );
-    if (confidence === "High" && s.props.threat === "None") store.update(s, { threat: "Possible" });
+  }
+
+  private runEo(): void {
+    const store = this.store;
+    if (store.clockMs < this.nextEoScanMs) return;
+    this.nextEoScanMs = store.clockMs + EO.periodS * 1000;
+    const detections: RawDetection[] = [];
+    const observed = [...this.targets.filter((t) => t.active), ...this.friendlyPositions()];
+    for (const o of observed) {
+      if (inEoFootprint(o.pos) && this.rng() < EO.pd) detections.push(eoMeasure(this.rng, o.pos, store.clockMs, o.id));
+    }
+    for (let i = poisson(this.rng, EO.falseAlarmsPerScan); i > 0; i--) {
+      const r = EO.radius * Math.sqrt(this.rng());
+      const a = this.rng() * TWO_PI;
+      detections.push(eoPlot({ x: EO.stare.x + r * Math.cos(a), y: EO.stare.y + r * Math.sin(a) }, store.clockMs, null));
+    }
+    this.tracker.ingest(
+      detections,
+      store.clockMs,
+      this.friendlyPositions().map((f) => f.pos),
+      this.truthPos,
+    );
+  }
+
+  private trackAlerts(): void {
+    const store = this.store;
+    const lzs = store.list("LandingZone").filter((lz) => lz.props.status === "Suitable");
+    for (const t of store.list("Track")) {
+      if (t.props.status === "Tentative" || t.props.affiliation === "Neutral") continue;
+      for (const lz of lzs) {
+        if (store.linked(lz.id, "platformLz", "reverse").length === 0) continue;
+        const d = dist(t.props.pos, lz.props.pos);
+        const key = `${t.id}:${lz.id}`;
+        const closing =
+          d > 0 ? (t.props.vel.x * (lz.props.pos.x - t.props.pos.x) + t.props.vel.y * (lz.props.pos.y - t.props.pos.y)) / d : 0;
+        const closingLowerBound = closing - 2 * t.props.sigmaVel;
+        const threatening = d < LZ_CLOSE_RANGE_M || (d < LZ_ALERT_RANGE_M && closingLowerBound > LZ_CLOSING_MPS);
+        if (threatening && !this.alerted.has(key)) {
+          this.alerted.add(key);
+          store.log(
+            "warning",
+            `${t.props.label} ${Math.round(d)} m from ${lz.props.name}, closing at ${Math.max(closing, 0).toFixed(1)} m/s`,
+            [t.id, lz.id],
+          );
+        }
+      }
+      const at = store.linkedOne<"Structure">(t.id, "trackStructure");
+      if (at && at.props.threat === "None" && at.props.status !== "Cleared") {
+        store.update(at, { threat: "Possible" });
+        store.log("system", `${at.props.name} threat raised to POSSIBLE by ${t.props.label}`, [at.id, t.id]);
+      }
+    }
   }
 
   private checkPhases(): void {
@@ -385,9 +489,11 @@ export class Simulator {
           store.update(phase, { status: "Complete" });
           const aborted = phases(store).some((p) => p.props.status === "Aborted");
           store.update(region(store), { missionStatus: aborted ? "Aborted" : "Complete" });
-          store.log("system", aborted ? "All elements extracted. Mission aborted." : "All elements extracted. Mission complete.", [
-            phase.id,
-          ]);
+          store.log(
+            "system",
+            aborted ? "All elements extracted. Mission aborted." : "All elements extracted. Mission complete.",
+            [phase.id],
+          );
         }
         break;
 

@@ -3,6 +3,7 @@ import type { OntologyStore } from "./store";
 import {
   PHASE,
   alternateLz,
+  dist,
   missionOver,
   objectiveOf,
   phaseByOrder,
@@ -126,6 +127,7 @@ const assignObjective = defineAction({
     const previous = objectiveOf(store, unit);
     store.unlink("unitObjective", unit.id);
     store.link("unitObjective", unit.id, target.id);
+    store.update(unit, { entryGate: null });
     if (previous && previous.props.status === "Clearing") {
       const stillAssigned = store.linked<"Unit">(previous.id, "unitObjective", "reverse").length > 0;
       if (!stillAssigned) store.update(previous, { status: "Uncleared", clearingSince: null });
@@ -213,43 +215,36 @@ const markLzSuitable = defineAction({
   },
 });
 
-const confirmObservation = defineAction({
-  id: "confirmObservation",
-  label: "Confirm",
-  icon: "confirm",
-  intent: "warning",
-  appliesTo: "Observation",
-  check(_store, o) {
-    if (o.props.status !== "New") return `Already ${o.props.status.toLowerCase()}`;
-    return null;
-  },
-  apply(store, o) {
-    store.update(o, { status: "Confirmed" });
-    store.log("action", `Observation confirmed: ${o.props.summary}`, [o.id]);
-    for (const s of store.linked<"Structure">(o.id, "observationStructure")) {
-      if (s.props.threat !== "Confirmed" && s.props.status !== "Cleared") {
-        store.update(s, { threat: "Confirmed" });
-        store.log("system", `${s.props.name} threat raised to CONFIRMED`, [s.id]);
+const classifyTrack = (affiliation: "Hostile" | "Neutral") =>
+  defineAction({
+    id: affiliation === "Hostile" ? "classifyHostile" : "classifyNeutral",
+    label: affiliation === "Hostile" ? "Classify hostile" : "Classify neutral",
+    icon: affiliation === "Hostile" ? "warning-sign" : "shield",
+    intent: affiliation === "Hostile" ? "danger" : "success",
+    appliesTo: "Track",
+    check(_store, t) {
+      if (t.props.affiliation === affiliation) return `Already ${affiliation.toLowerCase()}`;
+      if (t.props.status === "Tentative") return "Track is not confirmed yet";
+      return null;
+    },
+    apply(store, t) {
+      store.update(t, { affiliation });
+      store.log("action", `${t.props.label} classified ${affiliation.toUpperCase()}`, [t.id]);
+      if (affiliation !== "Hostile") return;
+      for (const s of store.linked<"Structure">(t.id, "trackStructure")) {
+        if (s.props.threat !== "Confirmed" && s.props.status !== "Cleared") {
+          store.update(s, { threat: "Confirmed" });
+          store.log("system", `${s.props.name} threat raised to CONFIRMED by ${t.props.label}`, [s.id, t.id]);
+        }
       }
-    }
-  },
-});
-
-const dismissObservation = defineAction({
-  id: "dismissObservation",
-  label: "Dismiss",
-  icon: "cross",
-  intent: "none",
-  appliesTo: "Observation",
-  check(_store, o) {
-    if (o.props.status !== "New") return `Already ${o.props.status.toLowerCase()}`;
-    return null;
-  },
-  apply(store, o) {
-    store.update(o, { status: "Dismissed" });
-    store.log("action", `Observation dismissed: ${o.props.summary}`, [o.id]);
-  },
-});
+      for (const lz of store.list("LandingZone")) {
+        const d = dist(t.props.pos, lz.props.pos);
+        if (d < 300 && lz.props.status === "Suitable") {
+          store.log("warning", `Hostile ${t.props.label} is ${Math.round(d)} m from ${lz.props.name}`, [t.id, lz.id]);
+        }
+      }
+    },
+  });
 
 export const ACTIONS: ActionDef[] = [
   startPhase,
@@ -258,8 +253,8 @@ export const ACTIONS: ActionDef[] = [
   markCleared,
   markLzRisky,
   markLzSuitable,
-  confirmObservation,
-  dismissObservation,
+  classifyTrack("Hostile"),
+  classifyTrack("Neutral"),
 ];
 
 export function actionsFor(type: ObjectTypeId): ActionDef[] {

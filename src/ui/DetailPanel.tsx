@@ -42,7 +42,7 @@ export function DetailPanel() {
               <td className="muted">{p.label}</td>
               <td>
                 {p.format === "status" ? (
-                  <Tag minimal intent={statusIntent(props[p.key])}>
+                  <Tag minimal intent={statusIntent(props[p.key], p.key)}>
                     {String(props[p.key])}
                   </Tag>
                 ) : (

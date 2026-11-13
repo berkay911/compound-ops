@@ -10,6 +10,13 @@ export interface Rect {
   h: number;
 }
 
+export interface Gate {
+  name: string;
+  pos: Point;
+  outer: Point;
+  inner: Point;
+}
+
 export type MissionStatus = "Planning" | "In progress" | "Complete" | "Aborted";
 export type CompoundStatus = "Unknown" | "Contested" | "Secured";
 export type StructureStatus = "Uncleared" | "Clearing" | "Clear reported" | "Cleared";
@@ -34,9 +41,10 @@ export type PlatformStatus =
   | "Egress"
   | "RTB complete"
   | "On station";
-export type Confidence = "Low" | "Medium" | "High";
-export type ObservationStatus = "New" | "Confirmed" | "Dismissed";
 export type PhaseStatus = "Pending" | "Active" | "Complete" | "Aborted";
+export type SensorKind = "Ground radar" | "EO/IR";
+export type TrackStatus = "Tentative" | "Confirmed" | "Coasting";
+export type Affiliation = "Unknown" | "Hostile" | "Neutral";
 
 export interface PropsByType {
   Region: {
@@ -51,7 +59,7 @@ export interface PropsByType {
     name: string;
     status: CompoundStatus;
     wall: Point[];
-    gates: { name: string; pos: Point }[];
+    gates: Gate[];
   };
   Structure: {
     name: string;
@@ -60,7 +68,6 @@ export interface PropsByType {
     threat: ThreatLevel;
     rect: Rect;
     door: Point;
-    breachPoint: Point;
     clearingSince: number | null;
   };
   LandingZone: {
@@ -77,6 +84,9 @@ export interface PropsByType {
     pos: Point;
     waypoint: Point | null;
     overwatchPos: Point | null;
+    entryGate: string | null;
+    route: Point[];
+    routeGoal: Point | null;
   };
   Platform: {
     callsign: string;
@@ -88,18 +98,49 @@ export interface PropsByType {
     waypoint: Point | null;
     landedAt: number | null;
   };
-  Observation: {
-    summary: string;
-    confidence: Confidence;
-    status: ObservationStatus;
-    timeMs: number;
-    pos: Point;
-  };
   Phase: {
     name: string;
     order: number;
     status: PhaseStatus;
     startedAt: number | null;
+  };
+  Sensor: {
+    name: string;
+    kind: SensorKind;
+    status: "Operational" | "Degraded";
+    pos: Point;
+    rangeM: number;
+    scanPeriodS: number;
+    accuracy: string;
+    sweepDeg: number | null;
+    footprint: { center: Point; radius: number } | null;
+  };
+  Detection: {
+    label: string;
+    sensorName: string;
+    timeMs: number;
+    pos: Point;
+    rangeM: number | null;
+    bearingDeg: number | null;
+  };
+  Track: {
+    label: string;
+    status: TrackStatus;
+    affiliation: Affiliation;
+    pos: Point;
+    vel: Point;
+    speedMps: number;
+    sigmaVel: number;
+    headingDeg: number;
+    sigmaMajor: number;
+    sigmaMinor: number;
+    ellipseDeg: number;
+    hits: number;
+    maneuverProb: number;
+    sources: string;
+    initiatedMs: number;
+    lastUpdateMs: number;
+    history: Point[];
   };
 }
 
@@ -111,7 +152,18 @@ export interface OntObject<T extends ObjectTypeId = ObjectTypeId> {
   props: PropsByType[T];
 }
 
-export type PropertyFormat = "text" | "number" | "percent" | "point" | "clock" | "status" | "feet";
+export type PropertyFormat =
+  | "text"
+  | "number"
+  | "percent"
+  | "point"
+  | "clock"
+  | "status"
+  | "feet"
+  | "meters"
+  | "mps"
+  | "deg"
+  | "prob";
 
 export interface PropertyDef {
   key: string;
@@ -161,7 +213,6 @@ export const OBJECT_TYPES: Record<ObjectTypeId, ObjectTypeDef> = {
       { key: "threat", label: "Threat", format: "status" },
       { key: "floors", label: "Floors", format: "number" },
       { key: "door", label: "Door", format: "point" },
-      { key: "breachPoint", label: "Breach point", format: "point" },
     ],
   },
   LandingZone: {
@@ -173,7 +224,7 @@ export const OBJECT_TYPES: Record<ObjectTypeId, ObjectTypeDef> = {
     properties: [
       { key: "status", label: "Status", format: "status" },
       { key: "role", label: "Role", format: "text" },
-      { key: "pos", label: "Position", format: "point" },
+      { key: "pos", label: "Grid", format: "point" },
     ],
   },
   Unit: {
@@ -186,7 +237,8 @@ export const OBJECT_TYPES: Record<ObjectTypeId, ObjectTypeDef> = {
       { key: "status", label: "Status", format: "status" },
       { key: "role", label: "Role", format: "text" },
       { key: "personnel", label: "Personnel", format: "number" },
-      { key: "pos", label: "Position", format: "point" },
+      { key: "entryGate", label: "Entry gate", format: "text" },
+      { key: "pos", label: "Grid", format: "point" },
       { key: "waypoint", label: "Waypoint", format: "point" },
     ],
   },
@@ -201,21 +253,8 @@ export const OBJECT_TYPES: Record<ObjectTypeId, ObjectTypeDef> = {
       { key: "kind", label: "Kind", format: "text" },
       { key: "fuel", label: "Fuel", format: "percent" },
       { key: "altitudeFt", label: "Altitude", format: "feet" },
-      { key: "pos", label: "Position", format: "point" },
+      { key: "pos", label: "Grid", format: "point" },
       { key: "waypoint", label: "Waypoint", format: "point" },
-    ],
-  },
-  Observation: {
-    id: "Observation",
-    displayName: "Observation",
-    pluralName: "Observations",
-    icon: "eye-open",
-    titleKey: "summary",
-    properties: [
-      { key: "status", label: "Status", format: "status" },
-      { key: "confidence", label: "Confidence", format: "status" },
-      { key: "timeMs", label: "Time", format: "clock" },
-      { key: "pos", label: "Position", format: "point" },
     ],
   },
   Phase: {
@@ -230,17 +269,68 @@ export const OBJECT_TYPES: Record<ObjectTypeId, ObjectTypeDef> = {
       { key: "startedAt", label: "Started", format: "clock" },
     ],
   },
+  Sensor: {
+    id: "Sensor",
+    displayName: "Sensor",
+    pluralName: "Sensors",
+    icon: "satellite",
+    titleKey: "name",
+    properties: [
+      { key: "status", label: "Status", format: "status" },
+      { key: "kind", label: "Kind", format: "text" },
+      { key: "accuracy", label: "Accuracy", format: "text" },
+      { key: "rangeM", label: "Range", format: "meters" },
+      { key: "scanPeriodS", label: "Revisit", format: "number" },
+      { key: "pos", label: "Grid", format: "point" },
+    ],
+  },
+  Detection: {
+    id: "Detection",
+    displayName: "Detection",
+    pluralName: "Detections",
+    icon: "flash",
+    titleKey: "label",
+    properties: [
+      { key: "sensorName", label: "Sensor", format: "text" },
+      { key: "timeMs", label: "Time", format: "clock" },
+      { key: "pos", label: "Grid", format: "point" },
+      { key: "rangeM", label: "Range", format: "meters" },
+      { key: "bearingDeg", label: "Bearing", format: "deg" },
+    ],
+  },
+  Track: {
+    id: "Track",
+    displayName: "Track",
+    pluralName: "Tracks",
+    icon: "path-search",
+    titleKey: "label",
+    properties: [
+      { key: "status", label: "Status", format: "status" },
+      { key: "affiliation", label: "Affiliation", format: "status" },
+      { key: "pos", label: "Grid", format: "point" },
+      { key: "speedMps", label: "Speed", format: "mps" },
+      { key: "sigmaVel", label: "1σ velocity", format: "mps" },
+      { key: "headingDeg", label: "Heading", format: "deg" },
+      { key: "sigmaMajor", label: "1σ major", format: "meters" },
+      { key: "sigmaMinor", label: "1σ minor", format: "meters" },
+      { key: "maneuverProb", label: "IMM maneuver", format: "prob" },
+      { key: "hits", label: "Updates", format: "number" },
+      { key: "sources", label: "Sources", format: "text" },
+      { key: "lastUpdateMs", label: "Last update", format: "clock" },
+    ],
+  },
 };
 
 export const TYPE_ORDER: ObjectTypeId[] = [
   "Region",
   "Phase",
+  "Track",
+  "Sensor",
   "Compound",
   "Structure",
   "LandingZone",
   "Platform",
   "Unit",
-  "Observation",
 ];
 
 export interface LinkTypeDef {
@@ -260,9 +350,10 @@ export type LinkTypeId =
   | "platformLz"
   | "unitLift"
   | "unitObjective"
-  | "observationSource"
-  | "observationStructure"
-  | "observationLz";
+  | "sensorPlatform"
+  | "detectionSensor"
+  | "trackDetection"
+  | "trackStructure";
 
 export const LINK_TYPES: Record<LinkTypeId, LinkTypeDef> = {
   regionCompound: { id: "regionCompound", from: "Region", to: "Compound", forwardLabel: "Compounds", reverseLabel: "Region" },
@@ -273,9 +364,10 @@ export const LINK_TYPES: Record<LinkTypeId, LinkTypeDef> = {
   platformLz: { id: "platformLz", from: "Platform", to: "LandingZone", forwardLabel: "Assigned LZ", reverseLabel: "Assigned platforms" },
   unitLift: { id: "unitLift", from: "Unit", to: "Platform", forwardLabel: "Lift", reverseLabel: "Lift for" },
   unitObjective: { id: "unitObjective", from: "Unit", to: "Structure", forwardLabel: "Objective", reverseLabel: "Assigned units" },
-  observationSource: { id: "observationSource", from: "Observation", to: "Platform", forwardLabel: "Source", reverseLabel: "Observations" },
-  observationStructure: { id: "observationStructure", from: "Observation", to: "Structure", forwardLabel: "Concerns", reverseLabel: "Observations" },
-  observationLz: { id: "observationLz", from: "Observation", to: "LandingZone", forwardLabel: "Concerns", reverseLabel: "Observations" },
+  sensorPlatform: { id: "sensorPlatform", from: "Sensor", to: "Platform", forwardLabel: "Mounted on", reverseLabel: "Sensors" },
+  detectionSensor: { id: "detectionSensor", from: "Detection", to: "Sensor", forwardLabel: "Sensor", reverseLabel: "Recent detections" },
+  trackDetection: { id: "trackDetection", from: "Track", to: "Detection", forwardLabel: "Supporting detections", reverseLabel: "Track" },
+  trackStructure: { id: "trackStructure", from: "Track", to: "Structure", forwardLabel: "Located at", reverseLabel: "Tracks" },
 };
 
 export function titleOf(obj: OntObject): string {

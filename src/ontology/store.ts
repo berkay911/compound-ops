@@ -94,6 +94,12 @@ export class OntologyStore {
     this.changed();
   }
 
+  remove(id: string): void {
+    if (!this.objects.delete(id)) return;
+    this.links = this.links.filter((l) => l.from !== id && l.to !== id);
+    this.changed();
+  }
+
   link(type: LinkTypeId, from: string, to: string): void {
     if (this.links.some((l) => l.type === type && l.from === from && l.to === to)) return;
     this.links.push({ type, from, to });

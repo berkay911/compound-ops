@@ -19,7 +19,7 @@ export interface Gate {
 
 export type MissionStatus = "Planning" | "In progress" | "Complete" | "Aborted";
 export type CompoundStatus = "Unknown" | "Contested" | "Secured";
-export type StructureStatus = "Uncleared" | "Clearing" | "Clear reported" | "Cleared";
+export type StructureStatus = "Uncleared" | "Clearing" | "Cleared";
 export type ThreatLevel = "None" | "Possible" | "Confirmed";
 export type LzStatus = "Suitable" | "Risky";
 export type UnitRole = "Assault" | "Overwatch";
@@ -32,7 +32,7 @@ export type UnitStatus =
   | "Assaulting"
   | "Holding"
   | "Extracted";
-export type PlatformKind = "Helicopter" | "UAV";
+export type PlatformKind = "Helicopter" | "UAV" | "FPV";
 export type PlatformStatus =
   | "Staged"
   | "Inbound"
@@ -40,11 +40,18 @@ export type PlatformStatus =
   | "Holding"
   | "Egress"
   | "RTB complete"
-  | "On station";
+  | "On station"
+  | "Ready"
+  | "Engaging"
+  | "Holding off"
+  | "Returning"
+  | "Expended";
 export type PhaseStatus = "Pending" | "Active" | "Complete" | "Aborted";
 export type SensorKind = "Ground radar" | "EO/IR";
 export type TrackStatus = "Tentative" | "Confirmed" | "Coasting";
 export type Affiliation = "Unknown" | "Hostile" | "Neutral";
+export type WeaponsStatus = "Free" | "Hold";
+export type EngagementStatus = "In flight" | "Holding off" | "Hit" | "Aborted";
 
 export interface PropsByType {
   Region: {
@@ -54,12 +61,14 @@ export interface PropsByType {
     missionStatus: MissionStatus;
     fob: Point;
     holdingArea: Point;
+    weapons: WeaponsStatus;
   };
   Compound: {
     name: string;
     status: CompoundStatus;
     wall: Point[];
     gates: Gate[];
+    objArea: Rect;
   };
   Structure: {
     name: string;
@@ -69,6 +78,7 @@ export interface PropsByType {
     rect: Rect;
     door: Point;
     clearingSince: number | null;
+    clearedBy: string | null;
   };
   LandingZone: {
     name: string;
@@ -142,6 +152,21 @@ export interface PropsByType {
     initiatedMs: number;
     lastUpdateMs: number;
     history: Point[];
+    classifiedBy: "System" | "Operator" | null;
+    assessment: string;
+  };
+  Engagement: {
+    label: string;
+    status: EngagementStatus;
+    targetLabel: string;
+    effector: string;
+    decidedAt: number;
+    closedAt: number | null;
+    rationale: string;
+    checks: string;
+    outcome: string;
+    aimPoint: Point;
+    nearestFriendlyM: number;
   };
 }
 
@@ -190,6 +215,7 @@ export const OBJECT_TYPES: Record<ObjectTypeId, ObjectTypeDef> = {
     titleKey: "name",
     properties: [
       { key: "missionStatus", label: "Mission", format: "status" },
+      { key: "weapons", label: "Weapons", format: "status" },
       { key: "weather", label: "Weather", format: "text" },
       { key: "illumination", label: "Illumination", format: "text" },
       { key: "fob", label: "FOB", format: "point" },
@@ -212,6 +238,7 @@ export const OBJECT_TYPES: Record<ObjectTypeId, ObjectTypeDef> = {
     properties: [
       { key: "status", label: "Status", format: "status" },
       { key: "threat", label: "Threat", format: "status" },
+      { key: "clearedBy", label: "Cleared by", format: "text" },
       { key: "floors", label: "Floors", format: "number" },
       { key: "door", label: "Door", format: "point" },
     ],
@@ -300,6 +327,25 @@ export const OBJECT_TYPES: Record<ObjectTypeId, ObjectTypeDef> = {
       { key: "bearingDeg", label: "Bearing", format: "deg" },
     ],
   },
+  Engagement: {
+    id: "Engagement",
+    displayName: "Engagement",
+    pluralName: "Engagements",
+    icon: "locate",
+    titleKey: "label",
+    properties: [
+      { key: "status", label: "Status", format: "status" },
+      { key: "targetLabel", label: "Target", format: "text" },
+      { key: "effector", label: "Effector", format: "text" },
+      { key: "decidedAt", label: "Decided", format: "clock" },
+      { key: "closedAt", label: "Closed", format: "clock" },
+      { key: "rationale", label: "Rationale", format: "text" },
+      { key: "checks", label: "Rule checks", format: "text" },
+      { key: "outcome", label: "Outcome", format: "text" },
+      { key: "nearestFriendlyM", label: "Nearest friendly", format: "meters" },
+      { key: "aimPoint", label: "Aim point", format: "point" },
+    ],
+  },
   Track: {
     id: "Track",
     displayName: "Track",
@@ -309,6 +355,8 @@ export const OBJECT_TYPES: Record<ObjectTypeId, ObjectTypeDef> = {
     properties: [
       { key: "status", label: "Status", format: "status" },
       { key: "affiliation", label: "Affiliation", format: "status" },
+      { key: "classifiedBy", label: "Classified by", format: "text" },
+      { key: "assessment", label: "Assessment", format: "text" },
       { key: "pos", label: "Grid", format: "point" },
       { key: "speedMps", label: "Speed", format: "mps" },
       { key: "sigmaVel", label: "1σ velocity", format: "mps" },
@@ -327,6 +375,7 @@ export const TYPE_ORDER: ObjectTypeId[] = [
   "Region",
   "Phase",
   "Track",
+  "Engagement",
   "Sensor",
   "Compound",
   "Structure",
@@ -355,7 +404,9 @@ export type LinkTypeId =
   | "sensorPlatform"
   | "detectionSensor"
   | "trackDetection"
-  | "trackStructure";
+  | "trackStructure"
+  | "engagementTarget"
+  | "engagementEffector";
 
 export const LINK_TYPES: Record<LinkTypeId, LinkTypeDef> = {
   regionCompound: { id: "regionCompound", from: "Region", to: "Compound", forwardLabel: "Compounds", reverseLabel: "Region" },
@@ -370,6 +421,8 @@ export const LINK_TYPES: Record<LinkTypeId, LinkTypeDef> = {
   detectionSensor: { id: "detectionSensor", from: "Detection", to: "Sensor", forwardLabel: "Sensor", reverseLabel: "Recent detections" },
   trackDetection: { id: "trackDetection", from: "Track", to: "Detection", forwardLabel: "Supporting detections", reverseLabel: "Track" },
   trackStructure: { id: "trackStructure", from: "Track", to: "Structure", forwardLabel: "Located at", reverseLabel: "Tracks" },
+  engagementTarget: { id: "engagementTarget", from: "Engagement", to: "Track", forwardLabel: "Target", reverseLabel: "Engagements" },
+  engagementEffector: { id: "engagementEffector", from: "Engagement", to: "Platform", forwardLabel: "Effector", reverseLabel: "Engagements" },
 };
 
 export function titleOf(obj: OntObject): string {

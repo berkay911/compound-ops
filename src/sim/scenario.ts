@@ -2,6 +2,8 @@ import type { OntologyStore } from "../ontology/store";
 import { EO, RADAR } from "./sensors";
 
 export const MAP = { width: 1000, height: 700 } as const;
+export const FPV_LAUNCH = { x: 76, y: 628 };
+const FPV_COUNT = 6;
 
 export function loadScenario(store: OntologyStore): void {
   const region = store.add("Region", "region-granite", {
@@ -11,6 +13,7 @@ export function loadScenario(store: OntologyStore): void {
     missionStatus: "Planning",
     fob: { x: 50, y: 650 },
     holdingArea: { x: 190, y: 640 },
+    weapons: "Free",
   });
 
   const phaseNames = ["Infil", "Approach", "Assault", "Exfil"];
@@ -34,6 +37,7 @@ export function loadScenario(store: OntologyStore): void {
       { name: "South gate", pos: { x: 634, y: 431 }, outer: { x: 634, y: 452 }, inner: { x: 634, y: 414 } },
       { name: "West gate", pos: { x: 523, y: 340 }, outer: { x: 500, y: 340 }, inner: { x: 541, y: 340 } },
     ],
+    objArea: { x: 488, y: 198, w: 290, h: 276 },
   });
   store.link("regionCompound", region.id, compound.id);
 
@@ -76,6 +80,7 @@ export function loadScenario(store: OntologyStore): void {
       rect: s.rect,
       door: s.door,
       clearingSince: null,
+      clearedBy: null,
     });
     store.link("compoundStructure", compound.id, s.id);
   }
@@ -116,6 +121,18 @@ export function loadScenario(store: OntologyStore): void {
     waypoint: null,
     landedAt: null,
   });
+  for (let i = 1; i <= FPV_COUNT; i++) {
+    store.add("Platform", `viper-${i}`, {
+      callsign: `VIPER-${i}`,
+      kind: "FPV",
+      status: "Ready",
+      fuel: 100,
+      altitudeFt: 0,
+      pos: { ...FPV_LAUNCH },
+      waypoint: null,
+      landedAt: null,
+    });
+  }
   store.link("platformLz", "dusty-1", "hlz-raven");
   store.link("platformLz", "dusty-2", "hlz-raven");
 

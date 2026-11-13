@@ -27,13 +27,20 @@ import {
 } from "./sensors";
 import { Tracker } from "./tracker";
 import { entryGate } from "./routing";
-import { buildNavGrid, findPath, type NavGrid } from "./nav";
+import { buildNavGrid, findPath, pathLength, type NavGrid } from "./nav";
+import { FiresCell } from "./fires";
 
 const HELO_SPEED = 18;
 const UNIT_SPEED = 11;
 const ARRIVE = 3;
 const OFFLOAD_MS = 4000;
 const CLEAR_MS_PER_FLOOR = 9000;
+
+export interface Neutralization {
+  truthId: string;
+  by: string;
+  timeMs: number;
+}
 const ORBIT = { center: { x: 632, y: 336 }, radius: 175, rate: 0.12 };
 const LZ_ALERT_RANGE_M = 450;
 const LZ_CLOSE_RANGE_M = 120;
@@ -66,6 +73,8 @@ export class Simulator {
   private nextEoScanMs = 0;
   private alerted = new Set<string>();
   readonly nav: NavGrid;
+  readonly fires: FiresCell;
+  readonly neutralized: Neutralization[] = [];
 
   constructor(private store: OntologyStore) {
     this.tracker = new Tracker(store, { [RADAR.id]: RADAR.name, [EO.id]: EO.name });
@@ -75,6 +84,14 @@ export class Simulator {
       gates: compound?.props.gates ?? [],
       buildings: store.list("Structure").map((s) => s.props.rect),
     });
+    this.fires = new FiresCell(store, this.targets, (truthId, by, trackId) => this.killed(truthId, by, trackId));
+  }
+
+  private killed(truthId: string, by: string, trackId?: string): void {
+    this.neutralized.push({ truthId, by, timeMs: this.store.clockMs });
+    for (const t of this.store.list("Track")) {
+      if (t.id === trackId || this.tracker.truthOf(t.id) === truthId) this.tracker.neutralize(t.id, `${by} BDA, target neutralized`);
+    }
   }
 
   tick(dtMs: number): void {
@@ -90,6 +107,7 @@ export class Simulator {
     this.runRadar(dt);
     this.runEo();
     this.tracker.maintain(store.clockMs, this.truthPos);
+    this.fires.tick(dt);
     this.trackAlerts();
     this.checkPhases();
     store.touch();
@@ -325,28 +343,73 @@ export class Simulator {
 
   private updateStructures(): void {
     const store = this.store;
-    if (activePhase(store)?.props.order !== PHASE.ASSAULT) return;
+    const order = activePhase(store)?.props.order;
+    if (order === PHASE.APPROACH || order === PHASE.ASSAULT) this.allocateObjectives();
+    if (order !== PHASE.ASSAULT) return;
+    const compound = store.list("Compound")[0];
 
     for (const s of store.list("Structure")) {
-      const assaulting = store
-        .linked<"Unit">(s.id, "unitObjective", "reverse")
-        .filter((u) => u.props.status === "Assaulting");
+      const teams = store.linked<"Unit">(s.id, "unitObjective", "reverse");
+      const assaulting = teams.filter((u) => u.props.status === "Assaulting");
 
       if (s.props.status === "Uncleared" && assaulting.length > 0) {
         store.update(s, { status: "Clearing", clearingSince: store.clockMs });
-        store.update(store.list("Compound")[0], { status: "Contested" });
+        if (compound.props.status !== "Contested") store.update(compound, { status: "Contested" });
         store.log("sim", `${assaulting[0].props.callsign} breaching ${s.props.name}`, [assaulting[0].id, s.id]);
         continue;
       }
 
-      if (s.props.status === "Clearing" && s.props.clearingSince !== null) {
-        const factor = s.props.threat === "Confirmed" ? 1.5 : 1;
-        if (store.clockMs - s.props.clearingSince >= s.props.floors * CLEAR_MS_PER_FLOOR * factor) {
-          store.update(s, { status: "Clear reported" });
-          const who = assaulting[0]?.props.callsign ?? "Assault team";
-          store.log("warning", `${who} reports ${s.props.name} clear. Confirm.`, [s.id]);
-        }
+      if (s.props.status !== "Clearing" || s.props.clearingSince === null) continue;
+      const factor = s.props.threat === "Confirmed" ? 1.5 : 1;
+      if (store.clockMs - s.props.clearingSince < s.props.floors * CLEAR_MS_PER_FLOOR * factor) continue;
+      const who = teams[0]?.props.callsign ?? "Assault team";
+      store.update(s, { status: "Cleared", clearingSince: null, clearedBy: who });
+      for (const u of teams) {
+        store.unlink("unitObjective", u.id, s.id);
+        store.update(u, { status: "Holding" });
       }
+      store.log("system", `${who} cleared ${s.props.name}`, [s.id, ...teams.map((u) => u.id)]);
+      this.neutralizeBound(s.id, who);
+    }
+
+    const structures = store.linked<"Structure">(compound.id, "compoundStructure");
+    if (compound.props.status !== "Secured" && structures.every((x) => x.props.status === "Cleared")) {
+      store.update(compound, { status: "Secured" });
+      this.neutralizeBound(compound.id, "assault teams");
+      const assault = phaseByOrder(store, PHASE.ASSAULT);
+      if (assault?.props.status === "Active") store.update(assault, { status: "Complete", endedAt: store.clockMs });
+      store.log("system", `${compound.props.name} secured. Teams holding in place, ready for Exfil.`, [compound.id]);
+    }
+  }
+
+  private allocateObjectives(): void {
+    const store = this.store;
+    for (const u of store.list("Unit")) {
+      if (u.props.role !== "Assault" || u.props.status === "Extracted" || carrierOf(store, u) || objectiveOf(store, u)) continue;
+      const open = store
+        .list("Structure")
+        .filter((s) => s.props.status !== "Cleared" && store.linked(s.id, "unitObjective", "reverse").length === 0)
+        .map((s) => ({ s, d: pathLength(u.props.pos, findPath(this.nav, u.props.pos, s.props.door)) }))
+        .sort((a, b) => a.d - b.d);
+      const next = open[0];
+      if (!next) continue;
+      store.link("unitObjective", u.id, next.s.id);
+      store.update(u, { entryGate: null });
+      store.log("system", `${u.props.callsign} tasked to ${next.s.props.name}: nearest uncleared, ${Math.round(next.d)} m by route`, [
+        u.id,
+        next.s.id,
+      ]);
+    }
+  }
+
+  private neutralizeBound(boundTo: string, by: string): void {
+    for (const t of this.targets) {
+      if (!t.active || t.boundTo !== boundTo) continue;
+      t.active = false;
+      t.vel = { x: 0, y: 0 };
+      const place = this.store.get(boundTo)?.props as { name?: string } | undefined;
+      this.store.log("warning", `${by} neutralized a hostile at ${place?.name ?? boundTo}`, [boundTo]);
+      this.killed(t.id, by);
     }
   }
 
@@ -368,13 +431,9 @@ export class Simulator {
     const store = this.store;
     const infilStarted = phaseByOrder(store, PHASE.INFIL)?.props.startedAt != null;
     for (const t of this.targets) {
-      if (!t.active && t.activation === "infil" && infilStarted && t.speed > 0) t.active = true;
-      if (t.active && t.boundTo) {
-        const bound = store.get(t.boundTo);
-        const neutralized =
-          (bound?.type === "Structure" && (bound as OntObject<"Structure">).props.status === "Cleared") ||
-          (bound?.type === "Compound" && (bound as OntObject<"Compound">).props.status === "Secured");
-        if (neutralized) t.active = false;
+      if (!t.active && !t.started && t.activation === "infil" && infilStarted) {
+        t.active = true;
+        t.started = true;
       }
       moveTarget(t, dt);
     }

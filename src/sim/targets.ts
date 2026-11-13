@@ -16,6 +16,7 @@ export interface TruthTarget {
   boundTo: string | null;
   activation: "start" | "infil";
   active: boolean;
+  started: boolean;
 }
 
 function target(
@@ -39,6 +40,7 @@ function target(
     boundTo,
     activation,
     active: activation === "start",
+    started: activation === "start",
   };
 }
 

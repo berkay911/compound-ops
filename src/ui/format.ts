@@ -33,7 +33,7 @@ export function formatValue(value: unknown, format: PropertyFormat): string {
   }
 }
 
-const ALERT = new Set(["Risky", "Aborted", "Confirmed", "Contested", "Coasting"]);
+const ALERT = new Set(["Risky", "Aborted", "Confirmed", "Contested", "Coasting", "Hold", "Holding off"]);
 
 export function toneOf(value: unknown, key = "status"): string {
   const v = String(value);

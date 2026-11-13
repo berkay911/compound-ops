@@ -47,7 +47,6 @@ export function MapView() {
       <rect width={MAP.width} height={MAP.height} fill={Colors.DARK_GRAY1} />
       <rect width={MAP.width} height={MAP.height} fill="url(#grid)" />
 
-      {/* terrain */}
       <path
         d="M 0 470 C 160 430 260 600 420 610 S 760 520 1000 560"
         fill="none"
@@ -72,7 +71,6 @@ export function MapView() {
         RIDGE 412
       </text>
 
-      {/* FOB and holding area */}
       <g>
         <rect x={r.props.fob.x - 18} y={r.props.fob.y - 26} width="52" height="50" fill="none" stroke={FRIENDLY} strokeDasharray="4 3" />
         <text x={r.props.fob.x - 16} y={r.props.fob.y + 38} className="map-label">
@@ -84,10 +82,8 @@ export function MapView() {
         </text>
       </g>
 
-      {/* UAV orbit */}
       <circle cx="632" cy="336" r="175" fill="none" stroke={Colors.BLUE2} strokeDasharray="2 6" opacity="0.6" />
 
-      {/* compound */}
       {compound && (
         <g onClick={pick(compound.id)} className="clickable">
           <polygon
@@ -155,7 +151,6 @@ export function MapView() {
         );
       })}
 
-      {/* waypoint lines */}
       {[...platforms, ...units].map((o) =>
         o.props.waypoint ? (
           <line

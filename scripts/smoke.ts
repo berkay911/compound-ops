@@ -1,6 +1,3 @@
-// Headless end-to-end run: plays the whole mission through ontology actions
-// and fails if any phase stalls. Run with `npm run smoke`.
-
 import { OntologyStore } from "../src/ontology/store";
 import { Simulator } from "../src/sim/simulator";
 import { loadScenario } from "../src/sim/scenario";
@@ -39,7 +36,6 @@ function until(label: string, done: () => boolean, onTick: () => void = () => {}
 
 const phaseDone = (order: number) => () => phaseByOrder(store, order)!.props.status === "Complete";
 
-// P1: divert both helicopters when the LZ threat shows up.
 run("startPhase", "phase-1");
 let diverted = false;
 until("P1 Infil", phaseDone(PHASE.INFIL), () => {
@@ -81,7 +77,6 @@ until("P4 Exfil", () => region(store).props.missionStatus === "Complete");
 
 const fullRunEvents = store.events.length;
 
-// Second run: abort in the middle of the assault.
 store = new OntologyStore();
 loadScenario(store);
 sim = new Simulator(store);

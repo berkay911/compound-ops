@@ -1,5 +1,3 @@
-// Read-only helpers over the ontology that both actions and the simulator use.
-
 import type { OntObject, Point } from "./schema";
 import type { OntologyStore } from "./store";
 
@@ -27,7 +25,6 @@ export function phaseByOrder(store: OntologyStore, order: number): OntObject<"Ph
 
 export const PHASE = { INFIL: 1, APPROACH: 2, ASSAULT: 3, EXFIL: 4 } as const;
 
-/** Nearest suitable landing zone other than `lz`, if any. */
 export function alternateLz(
   store: OntologyStore,
   lz: OntObject<"LandingZone">,

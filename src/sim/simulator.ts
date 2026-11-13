@@ -1,9 +1,3 @@
-// Mission simulator. Each tick it reads the ontology (phase, links, statuses),
-// moves platforms and units toward their current goals, produces UAV
-// observations, and advances phases whose completion conditions are met.
-// Because goals are derived from links every tick, an operator action such as
-// re-linking a helicopter to another LZ immediately changes its flight path.
-
 import type { OntObject, Point } from "../ontology/schema";
 import type { OntologyStore } from "../ontology/store";
 import {
@@ -19,7 +13,7 @@ import {
   region,
 } from "../ontology/queries";
 
-const HELO_SPEED = 18; // map units per second
+const HELO_SPEED = 18;
 const UNIT_SPEED = 11;
 const ARRIVE = 3;
 const OFFLOAD_MS = 4000;
@@ -46,7 +40,6 @@ function mulberry32(seed: number): () => number {
   };
 }
 
-/** Moves `pos` toward `target` in place; returns true once it has arrived. */
 function moveToward(pos: Point, target: Point, step: number): boolean {
   const d = dist(pos, target);
   if (d <= Math.max(step, ARRIVE)) {
@@ -90,8 +83,6 @@ export class Simulator {
     this.checkPhases();
     store.touch();
   }
-
-  // ---- helicopters -----------------------------------------------------------
 
   private landingSpot(platform: OntObject<"Platform">, lz: OntObject<"LandingZone">): Point {
     const helos = this.store.list("Platform").filter((p) => p.props.kind === "Helicopter");
@@ -162,7 +153,7 @@ export class Simulator {
             store.log("sim", `${p.callsign} inbound ${lz?.props.name ?? "?"} for pickup`, [helo.id]);
             break;
           }
-          if (p.waypoint === null) break; // already set down in the holding area
+          if (p.waypoint === null) break;
           store.update(helo, { waypoint: r.props.holdingArea, altitudeFt: 500 });
           if (moveToward(p.pos, r.props.holdingArea, HELO_SPEED * dt)) {
             store.update(helo, { waypoint: null, altitudeFt: 0 });
@@ -201,8 +192,6 @@ export class Simulator {
     });
   }
 
-  // ---- units ---------------------------------------------------------------------
-
   private unitGoal(unit: OntObject<"Unit">): { goal: Point | null; arrivedStatus: OntObject<"Unit">["props"]["status"] } {
     const store = this.store;
     const order = activePhase(store)?.props.order;
@@ -221,8 +210,6 @@ export class Simulator {
       const outside = compound && !insidePolygon(unit.props.pos, compound.props.wall);
       const door = objective.props.door;
       const wp = unit.props.waypoint;
-      // Once a unit has passed its breach point it keeps heading for the door,
-      // even while it is still crossing the strip outside the wall.
       const headingToDoor = wp !== null && wp.x === door.x && wp.y === door.y;
       const atBreach = dist(unit.props.pos, objective.props.breachPoint) <= ARRIVE;
       if (outside && !atBreach && !headingToDoor) return { goal: objective.props.breachPoint, arrivedStatus: "Moving" };
@@ -235,7 +222,6 @@ export class Simulator {
       return { goal: lz ? { x: lz.props.pos.x, y: lz.props.pos.y - 16 } : null, arrivedStatus: "Holding" };
     }
 
-    // Between phases, units hold where they are.
     return { goal: null, arrivedStatus: unit.props.status === "On ground" ? "On ground" : "Holding" };
   }
 
@@ -276,8 +262,6 @@ export class Simulator {
     store.log("sim", `${unit.props.callsign} embarked on ${lift.props.callsign}`, [unit.id, lift.id]);
   }
 
-  // ---- structures --------------------------------------------------------------
-
   private updateStructures(): void {
     const store = this.store;
     if (activePhase(store)?.props.order !== PHASE.ASSAULT) return;
@@ -304,8 +288,6 @@ export class Simulator {
       }
     }
   }
-
-  // ---- UAV and observations -------------------------------------------------------
 
   private updateUav(dt: number): void {
     const store = this.store;
@@ -338,7 +320,6 @@ export class Simulator {
     const store = this.store;
     if (region(store).props.missionStatus !== "In progress") return;
 
-    // Scripted event: a threat appears near the primary LZ shortly after infil starts.
     const infil = phaseByOrder(store, PHASE.INFIL);
     const raven = store.get("hlz-raven") as OntObject<"LandingZone"> | undefined;
     if (
@@ -375,8 +356,6 @@ export class Simulator {
     );
     if (confidence === "High" && s.props.threat === "None") store.update(s, { threat: "Possible" });
   }
-
-  // ---- phase completion --------------------------------------------------------------
 
   private checkPhases(): void {
     const store = this.store;

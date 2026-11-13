@@ -4,6 +4,8 @@ import { loadScenario } from "../src/sim/scenario";
 import { ACTIONS } from "../src/ontology/actions";
 import { PHASE, dist, objectiveOf, phaseByOrder, region } from "../src/ontology/queries";
 import { formatClock } from "../src/ui/format";
+import { insidePolygon } from "../src/sim/routing";
+import type { Point } from "../src/ontology/schema";
 
 let store = new OntologyStore();
 loadScenario(store);
@@ -16,6 +18,41 @@ function run(id: string, target: string, params: Record<string, string> = {}): v
   const reason = a.check(store, obj, params);
   if (reason) throw new Error(`${id} on ${target} refused: ${reason}`);
   a.apply(store, obj, params);
+}
+
+const lastPos = new Map<string, Point>();
+let movementChecks = 0;
+
+function groundMovers(): { id: string; pos: Point }[] {
+  const out: { id: string; pos: Point }[] = [];
+  for (const u of store.list("Unit")) {
+    if (u.props.status === "Extracted" || store.linkedOne(u.id, "platformCarries", "reverse")) {
+      lastPos.delete(u.id);
+      continue;
+    }
+    out.push({ id: u.id, pos: u.props.pos });
+  }
+  for (const t of sim.targets) if (t.active) out.push({ id: t.id, pos: t.pos });
+  return out;
+}
+
+function checkMovement(): void {
+  const compound = store.list("Compound")[0];
+  const rects = store.list("Structure").map((s) => ({ name: s.props.name, r: s.props.rect }));
+  for (const m of groundMovers()) {
+    for (const { name, r } of rects) {
+      if (m.pos.x > r.x && m.pos.x < r.x + r.w && m.pos.y > r.y && m.pos.y < r.y + r.h) {
+        throw new Error(`${m.id} is inside ${name} at ${formatClock(store.clockMs)}`);
+      }
+    }
+    const prev = lastPos.get(m.id);
+    if (prev && insidePolygon(prev, compound.props.wall) !== insidePolygon(m.pos, compound.props.wall)) {
+      const viaGate = compound.props.gates.some((g) => dist(g.pos, m.pos) < 8 || dist(g.pos, prev) < 8);
+      if (!viaGate) throw new Error(`${m.id} crossed the compound wall away from a gate at ${formatClock(store.clockMs)}`);
+    }
+    lastPos.set(m.id, { ...m.pos });
+    movementChecks++;
+  }
 }
 
 function until(label: string, done: () => boolean, onTick: () => void = () => {}, maxSimSec = 600): void {
@@ -38,6 +75,7 @@ function until(label: string, done: () => boolean, onTick: () => void = () => {}
     }
     onTick();
     sim.tick(100);
+    checkMovement();
   }
   console.log(`[ok] ${label} at ${formatClock(store.clockMs)}`);
 }
@@ -128,9 +166,12 @@ console.log(
 );
 if (!(trackRms < radarRms)) throw new Error("Fused tracks are not better than raw radar plots");
 
+console.log(`     no unit or person passed through a building or wall (${movementChecks} position checks)`);
+
 store = new OntologyStore();
 loadScenario(store);
 sim = new Simulator(store);
+lastPos.clear();
 run("startPhase", "phase-1");
 until("abort run: P1", phaseDone(PHASE.INFIL));
 run("startPhase", "phase-2");

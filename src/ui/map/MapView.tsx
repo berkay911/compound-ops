@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
-import { Button, ButtonGroup, Checkbox } from "@blueprintjs/core";
+import { Button, Checkbox } from "@blueprintjs/core";
 import { useOps } from "../world";
 import { easting, northing, toGrid } from "../grid";
 import { region } from "../../ontology/queries";
@@ -10,7 +10,7 @@ import { DOMAIN, ROAD, WADI, buildContours, heightAt, hillshadeDataUrl, peak } f
 import {
   AFFILIATION_COLOR,
   AirSymbol,
-  FILL,
+  IDENTITY,
   GroundUnitSymbol,
   LandingZoneSymbol,
   RadarSymbol,
@@ -37,16 +37,18 @@ const DEFAULT_LAYERS: Record<LayerKey, boolean> = {
   terrain: true,
   grid: true,
   graphics: true,
-  coverage: true,
-  plots: true,
+  coverage: false,
+  plots: false,
   tracks: true,
   ellipses: true,
   truth: false,
 };
 
+const LOD = { names: 1.45, detail: 2.4 };
+
 const pts = (list: Point[]) => list.map((p) => `${p.x},${p.y}`).join(" ");
 
-const TerrainLayer = memo(function TerrainLayer() {
+const TerrainLayer = memo(function TerrainLayer({ detail, fs }: { detail: boolean; fs: number }) {
   const image = useMemo(() => hillshadeDataUrl(), []);
   const contours = useMemo(() => buildContours(), []);
   const top = useMemo(() => peak(), []);
@@ -64,26 +66,29 @@ const TerrainLayer = memo(function TerrainLayer() {
       )}
       <path d={contours.minor} className="contour" vectorEffect="non-scaling-stroke" />
       <path d={contours.index} className="contour contour-index" vectorEffect="non-scaling-stroke" />
-      {contours.labels.map((l, i) => (
-        <text key={i} transform={`translate(${l.x} ${l.y}) rotate(${l.angle})`} className="contour-label" textAnchor="middle" dy={3}>
+      {detail &&
+        contours.labels.map((l, i) => (
+        <text key={i} transform={`translate(${l.x} ${l.y}) rotate(${l.angle})`} className="contour-label" textAnchor="middle" dy={3 * fs} fontSize={7.5 * fs}>
           {l.text}
         </text>
       ))}
       <polyline points={pts(WADI)} className="wadi-bank" vectorEffect="non-scaling-stroke" />
       <polyline points={pts(WADI)} className="wadi" vectorEffect="non-scaling-stroke" />
-      <text x={860} y={590} className="terrain-label italic">
+      <text x={860} y={590} fontSize={9 * fs} className="terrain-label italic">
         WADI SAKHR
       </text>
       <polyline points={pts(ROAD)} className="road-casing" vectorEffect="non-scaling-stroke" />
       <polyline points={pts(ROAD)} className="road" vectorEffect="non-scaling-stroke" />
-      <text x={300} y={572} className="terrain-label" transform="rotate(-31 300 572)">
+      <text x={300} y={572} fontSize={9 * fs} className="terrain-label" transform="rotate(-31 300 572)">
         RTE IRON
       </text>
       <path d={`M${top.x} ${top.y - 5}L${top.x + 4.5} ${top.y + 3}L${top.x - 4.5} ${top.y + 3}Z`} className="spot" />
-      <text x={top.x + 8} y={top.y + 4} className="terrain-label">
-        {Math.round(top.h)}
-      </text>
-      <text x={top.x - 40} y={top.y - 48} className="terrain-label">
+      {detail && (
+        <text x={top.x + 8} y={top.y + 4} fontSize={9 * fs} className="terrain-label">
+          {Math.round(top.h)}
+        </text>
+      )}
+      <text x={top.x - 40} y={top.y - 48} fontSize={9 * fs} className="terrain-label">
         RIDGE {Math.round(top.h)}
       </text>
     </g>
@@ -100,46 +105,49 @@ const GridLines = memo(function GridLines() {
   return <path d={d} className="grid-line" vectorEffect="non-scaling-stroke" />;
 });
 
-const ControlMeasures = memo(function ControlMeasures() {
+const ControlMeasures = memo(function ControlMeasures({ names, fs }: { names: boolean; fs: number }) {
   return (
     <g className="cm">
       <rect x={488} y={198} width={290} height={276} rx={34} className="cm-line" vectorEffect="non-scaling-stroke" />
-      <text x={680} y={192} className="cm-label strong">
+      <text x={680} y={192} fontSize={10 * fs} className="cm-label strong">
         OBJ FALCON
       </text>
       <polyline points="250,478 520,494 940,522" className="cm-line" vectorEffect="non-scaling-stroke" />
-      <text x={252} y={472} className="cm-label">
-        PL OAK
-      </text>
-      <text x={900} y={515} className="cm-label">
-        PL OAK
-      </text>
       <circle cx={520} cy={506} r={11} className="cm-line" vectorEffect="non-scaling-stroke" />
-      <text x={535} y={512} className="cm-label">
-        ORP
-      </text>
       <polyline points="64,640 225,595 386,540" className="cm-air" vectorEffect="non-scaling-stroke" />
       <circle cx={225} cy={595} r={7} className="cm-air" vectorEffect="non-scaling-stroke" />
-      <text x={214} y={580} className="cm-label air">
-        ACP 1
-      </text>
-      <text x={120} y={604} className="cm-label air" transform="rotate(-16 120 604)">
-        AR BLUE
-      </text>
       <polyline points="874,150 1030,95" className="cm-air" vectorEffect="non-scaling-stroke" />
       <path d="M470 186L482 206H458Z" className="cm-line" vectorEffect="non-scaling-stroke" />
-      <circle cx={470} cy={200} r={1.8} className="cm-dot" />
-      <text x={452} y={200} className="cm-label" textAnchor="end">
-        OP 1
-      </text>
       <ellipse cx={190} cy={640} rx={36} ry={20} className="cm-line dashed" vectorEffect="non-scaling-stroke" />
-      <text x={160} y={672} className="cm-label">
-        HA DUSTY
-      </text>
       <rect x={14} y={612} width={84} height={76} className="cm-line" vectorEffect="non-scaling-stroke" />
-      <text x={16} y={704} className="cm-label strong">
+      <text x={16} y={704} fontSize={10 * fs} className="cm-label strong">
         FOB ANVIL
       </text>
+      {names && (
+        <g>
+          <text x={252} y={472} fontSize={9 * fs} className="cm-label">
+            PL OAK
+          </text>
+          <text x={900} y={515} fontSize={9 * fs} className="cm-label">
+            PL OAK
+          </text>
+          <text x={535} y={512} fontSize={9 * fs} className="cm-label">
+            ORP
+          </text>
+          <text x={214} y={580} fontSize={9 * fs} className="cm-label">
+            ACP 1
+          </text>
+          <text x={120} y={604} fontSize={9 * fs} className="cm-label" transform="rotate(-16 120 604)">
+            AR BLUE
+          </text>
+          <text x={452} y={200} fontSize={9 * fs} className="cm-label" textAnchor="end">
+            OP 1
+          </text>
+          <text x={160} y={672} fontSize={9 * fs} className="cm-label">
+            HA DUSTY
+          </text>
+        </g>
+      )}
     </g>
   );
 });
@@ -172,7 +180,10 @@ export function MapView() {
 
   const fitZ = Math.min(size.w / MAP_W, size.h / MAP_H) * 0.97;
   const v = view ?? { cx: MAP_W / 2, cy: MAP_H / 2, z: fitZ };
-  const k = 1 / v.z;
+  const lod = v.z / fitZ;
+  const names = lod >= LOD.names;
+  const detail = lod >= LOD.detail;
+  const k = (1 / v.z) * (names ? 1 : 0.82);
   const vb = { x: v.cx - size.w / 2 / v.z, y: v.cy - size.h / 2 / v.z, w: size.w / v.z, h: size.h / v.z };
 
   const latest = useRef({ v, vb, fitZ });
@@ -228,15 +239,7 @@ export function MapView() {
   const radar = store.get(RADAR.id) as OntObject<"Sensor"> | undefined;
   const uav = platforms.find((p) => p.props.kind === "UAV");
   const gatesInUse = new Set(units.map((u) => u.props.entryGate).filter(Boolean));
-
-  const sweep = radar?.props.sweepDeg ?? 0;
-  const theta = ((sweep - 90) * Math.PI) / 180;
-  const trail = (40 * Math.PI) / 180;
-  const R = RADAR.maxRange;
   const c = RADAR.pos;
-  const wedge = `M${c.x} ${c.y}L${c.x + R * Math.cos(theta - trail)} ${c.y + R * Math.sin(theta - trail)}A${R} ${R} 0 0 1 ${
-    c.x + R * Math.cos(theta)
-  } ${c.y + R * Math.sin(theta)}Z`;
 
   const gridLabelsX: number[] = [];
   for (let x = Math.ceil(vb.x / 100) * 100; x <= vb.x + vb.w; x += 100) gridLabelsX.push(x);
@@ -278,12 +281,12 @@ export function MapView() {
         }}
       >
         <defs>
-          <pattern id="roof-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-            <path d="M0 0V6" stroke="rgba(255,255,255,0.10)" strokeWidth="1.5" />
+          <pattern id="roof-hatch" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <path d="M0 0V5" stroke="rgba(255,255,255,0.07)" strokeWidth="1.2" />
           </pattern>
         </defs>
         <rect x={DOMAIN.x0 - 4000} y={DOMAIN.y0 - 4000} width={10000} height={10000} className="map-void" />
-        {layers.terrain && <TerrainLayer />}
+        {layers.terrain && <TerrainLayer detail={detail} fs={1 / v.z} />}
         {layers.grid && <GridLines />}
 
         {layers.coverage && (
@@ -296,15 +299,6 @@ export function MapView() {
                 </text>
               </g>
             ))}
-            <path d={wedge} className="sweep" />
-            <line
-              x1={c.x}
-              y1={c.y}
-              x2={c.x + R * Math.cos(theta)}
-              y2={c.y + R * Math.sin(theta)}
-              className="sweep-edge"
-              vectorEffect="non-scaling-stroke"
-            />
             <circle cx={EO.stare.x} cy={EO.stare.y} r={EO.radius} className="eo-fov" vectorEffect="non-scaling-stroke" />
             {uav && (
               <line
@@ -316,9 +310,6 @@ export function MapView() {
                 vectorEffect="non-scaling-stroke"
               />
             )}
-            <text x={EO.stare.x + EO.radius * 0.72} y={EO.stare.y - EO.radius * 0.72} className="eo-label" fontSize={10 * k}>
-              EO/IR FOV
-            </text>
           </g>
         )}
 
@@ -326,7 +317,7 @@ export function MapView() {
           <g onClick={pick(compound.id)} className="clickable">
             <polygon
               points={pts(compound.props.wall)}
-              className={`wall ${compound.props.status === "Secured" ? "secured" : ""} ${sel(compound.id) ? "selected" : ""}`}
+              className={`wall ${sel(compound.id) ? "selected" : ""}`}
               vectorEffect="non-scaling-stroke"
             />
             {compound.props.gates.map((g) => {
@@ -335,20 +326,22 @@ export function MapView() {
               return (
                 <g key={g.name}>
                   <rect
-                    x={g.pos.x - (vertical ? 3 : 8)}
-                    y={g.pos.y - (vertical ? 8 : 3)}
-                    width={vertical ? 6 : 16}
-                    height={vertical ? 16 : 6}
+                    x={g.pos.x - (vertical ? 2.5 : 7)}
+                    y={g.pos.y - (vertical ? 7 : 2.5)}
+                    width={vertical ? 5 : 14}
+                    height={vertical ? 14 : 5}
                     className={`gate ${inUse ? "in-use" : ""}`}
                   />
-                  <text
-                    x={g.outer.x + (vertical ? -10 : 10)}
-                    y={g.outer.y + (vertical ? -6 : 3)}
-                    className={`gate-label ${inUse ? "in-use" : ""}`}
-                    fontSize={9 * Math.max(k, 0.8)}
-                  >
-                    {g.name.split(" ")[0][0]}G
-                  </text>
+                  {detail && (
+                    <text
+                      x={g.outer.x + (vertical ? -10 : 10)}
+                      y={g.outer.y + (vertical ? -6 : 3)}
+                      className="gate-label"
+                      fontSize={9 * k}
+                    >
+                      {g.name.split(" ")[0][0]}G
+                    </text>
+                  )}
                 </g>
               );
             })}
@@ -356,8 +349,7 @@ export function MapView() {
         )}
 
         {structures.map((s) => {
-          const { rect, status, threat, name } = s.props;
-          const threatClass = threat === "Confirmed" ? "threat-confirmed" : threat === "Possible" ? "threat-possible" : "";
+          const { rect, status, name } = s.props;
           return (
             <g key={s.id} onClick={pick(s.id)} className="clickable">
               <rect
@@ -365,18 +357,20 @@ export function MapView() {
                 y={rect.y}
                 width={rect.w}
                 height={rect.h}
-                className={`bldg ${status.replace(" ", "-").toLowerCase()} ${threatClass} ${sel(s.id) ? "selected" : ""}`}
+                className={`bldg ${status.replace(" ", "-").toLowerCase()} ${sel(s.id) ? "selected" : ""}`}
                 vectorEffect="non-scaling-stroke"
               />
-              {status === "Uncleared" && <rect x={rect.x} y={rect.y} width={rect.w} height={rect.h} fill="url(#roof-hatch)" />}
-              <text x={rect.x + rect.w / 2} y={rect.y + rect.h / 2 + 4} textAnchor="middle" className="bldg-label">
-                {name.split(" ")[0]}
-              </text>
+              {status !== "Cleared" && <rect x={rect.x} y={rect.y} width={rect.w} height={rect.h} fill="url(#roof-hatch)" />}
+              {(names || sel(s.id)) && (
+                <text x={rect.x + rect.w / 2} y={rect.y + rect.h / 2 + 3.5 * k} textAnchor="middle" className="bldg-label" fontSize={10 * k}>
+                  {name.split(" ")[0]}
+                </text>
+              )}
             </g>
           );
         })}
 
-        {layers.graphics && <ControlMeasures />}
+        {layers.graphics && <ControlMeasures names={names} fs={1 / v.z} />}
 
         {lzs.map((lz) => (
           <LandingZoneSymbol
@@ -396,7 +390,7 @@ export function MapView() {
             <polyline
               key={`route-${u.id}`}
               points={pts([u.props.pos, ...u.props.route])}
-              className="route"
+              className={`route ${sel(u.id) ? "selected" : ""}`}
               vectorEffect="non-scaling-stroke"
             />
           ) : null,
@@ -417,11 +411,10 @@ export function MapView() {
 
         {layers.plots &&
           world.sim.tracker.plots.map((p, i) => {
-            const opacity = Math.max(0, 1 - (store.clockMs - p.timeMs) / 4000);
             const t = `translate(${p.pos.x} ${p.pos.y}) scale(${k})`;
-            if (p.friendly) return <circle key={i} transform={t} r={2.2} className="plot-bft" opacity={opacity} />;
-            if (p.sensorId === RADAR.id) return <path key={i} transform={t} d="M-3.5 0H3.5M0 -3.5V3.5" className="plot-radar" opacity={opacity} />;
-            return <rect key={i} transform={t} x={-2.2} y={-2.2} width={4.4} height={4.4} className="plot-eo" opacity={opacity} />;
+            if (p.friendly) return <circle key={i} transform={t} r={1.8} className="plot-bft" />;
+            if (p.sensorId === RADAR.id) return <path key={i} transform={t} d="M-3 0H3M0 -3V3" className="plot-radar" />;
+            return <rect key={i} transform={t} x={-1.8} y={-1.8} width={3.6} height={3.6} className="plot-eo" />;
           })}
 
         {layers.tracks &&
@@ -432,7 +425,7 @@ export function MapView() {
             const lead = { x: p.pos.x + p.vel.x * 20, y: p.pos.y + p.vel.y * 20 };
             const angle = (Math.atan2(p.vel.y, p.vel.x) * 180) / Math.PI;
             return (
-              <g key={`trk-${t.id}`} opacity={p.status === "Coasting" ? 0.6 : 1}>
+              <g key={`trk-${t.id}`} opacity={p.status === "Coasting" ? 0.55 : 1}>
                 {layers.ellipses && (
                   <ellipse
                     cx={p.pos.x}
@@ -442,17 +435,16 @@ export function MapView() {
                     transform={`rotate(${p.ellipseDeg} ${p.pos.x} ${p.pos.y})`}
                     className={`ellipse ${p.status === "Coasting" ? "coasting" : ""}`}
                     stroke={color}
-                    fill={color}
                     vectorEffect="non-scaling-stroke"
                   />
                 )}
                 {p.history.map((h, i) => (
-                  <circle key={i} cx={h.x} cy={h.y} r={1.6 * k} fill={color} opacity={0.15 + (0.5 * i) / p.history.length} />
+                  <circle key={i} cx={h.x} cy={h.y} r={1.3 * k} fill={color} opacity={0.12 + (0.35 * i) / p.history.length} />
                 ))}
                 {p.speedMps > 0.6 && (
                   <g>
                     <line x1={p.pos.x} y1={p.pos.y} x2={lead.x} y2={lead.y} stroke={color} className="leader" vectorEffect="non-scaling-stroke" />
-                    <path transform={`translate(${lead.x} ${lead.y}) rotate(${angle}) scale(${k})`} d="M0 0L-8 -4L-8 4Z" fill={color} />
+                    <path transform={`translate(${lead.x} ${lead.y}) rotate(${angle}) scale(${k})`} d="M0 0L-7 -3.5L-7 3.5Z" fill={color} />
                   </g>
                 )}
               </g>
@@ -472,28 +464,33 @@ export function MapView() {
             ))}
 
         {radar && (
-          <RadarSymbol x={c.x} y={c.y} k={k} lines={[RADAR.name]} selected={sel(radar.id)} onPick={pick(radar.id)} />
+          <RadarSymbol x={c.x} y={c.y} k={k} lines={[names ? RADAR.name : null]} selected={sel(radar.id)} onPick={pick(radar.id)} />
         )}
 
         {layers.tracks &&
-          tracks.map((t) => (
-            <TrackSymbol
-              key={t.id}
-              x={t.props.pos.x}
-              y={t.props.pos.y}
-              k={k}
-              affiliation={t.props.affiliation}
-              status={t.props.status}
-              lines={[
-                t.props.label,
-                t.props.speedMps > 0.6
-                  ? `${t.props.speedMps.toFixed(1)} m/s ${String(Math.round(t.props.headingDeg)).padStart(3, "0")}°`
-                  : "STATIONARY",
-              ]}
-              selected={sel(t.id)}
-              onPick={pick(t.id)}
-            />
-          ))}
+          tracks.map((t) => {
+            const full = detail || sel(t.id);
+            return (
+              <TrackSymbol
+                key={t.id}
+                x={t.props.pos.x}
+                y={t.props.pos.y}
+                k={k}
+                affiliation={t.props.affiliation}
+                status={t.props.status}
+                lines={[
+                  names || sel(t.id) ? t.props.label : null,
+                  full
+                    ? t.props.speedMps > 0.6
+                      ? `${t.props.speedMps.toFixed(1)} m/s ${String(Math.round(t.props.headingDeg)).padStart(3, "0")}°`
+                      : "STATIONARY"
+                    : null,
+                ]}
+                selected={sel(t.id)}
+                onPick={pick(t.id)}
+              />
+            );
+          })}
 
         {units.map((u) => (
           <GroundUnitSymbol
@@ -503,7 +500,7 @@ export function MapView() {
             k={k}
             icon={u.props.role === "Assault" ? "infantry" : "recon"}
             echelon={u.props.role === "Assault" ? "squad" : "team"}
-            lines={[u.props.callsign, u.props.status.toUpperCase()]}
+            lines={[u.props.callsign, detail || sel(u.id) ? u.props.status.toUpperCase() : null]}
             selected={sel(u.id)}
             onPick={pick(u.id)}
           />
@@ -517,21 +514,24 @@ export function MapView() {
             k={k}
             icon={p.props.kind === "UAV" ? "uav" : "rotary"}
             landed={p.props.altitudeFt === 0}
-            lines={[p.props.callsign, p.props.altitudeFt > 0 ? `${p.props.altitudeFt} FT` : "ON DECK"]}
+            lines={[
+              p.props.callsign,
+              detail || sel(p.id) ? (p.props.altitudeFt > 0 ? `${p.props.altitudeFt} FT` : "ON DECK") : null,
+            ]}
             selected={sel(p.id)}
             onPick={pick(p.id)}
           />
         ))}
 
         {layers.grid && (
-          <g className="grid-labels" fontSize={10 * k}>
+          <g className="grid-labels" fontSize={9 * (1 / v.z)}>
             {gridLabelsX.map((x) => (
-              <text key={`gx${x}`} x={x + 3 * k} y={vb.y + 12 * k}>
+              <text key={`gx${x}`} x={x + 3 / v.z} y={vb.y + 11 / v.z}>
                 {Math.floor(easting(x) / 100)}
               </text>
             ))}
             {gridLabelsY.map((y) => (
-              <text key={`gy${y}`} x={vb.x + 4 * k} y={y - 3 * k}>
+              <text key={`gy${y}`} x={vb.x + 4 / v.z} y={y - 3 / v.z}>
                 {Math.floor(northing(y) / 100)}
               </text>
             ))}
@@ -541,19 +541,19 @@ export function MapView() {
 
       <div className="hud hud-tl">
         <div className="hud-title">{r.props.name} · OBJ FALCON</div>
-        <div>GRID 100 M · CONTOUR INTERVAL 2 M · {r.props.illumination.toUpperCase()}</div>
+        <div>GRID 100 M · CI 2 M · {r.props.illumination.toUpperCase()}</div>
       </div>
 
       <div className="hud hud-tr">
-        <ButtonGroup vertical variant="minimal" className="hud-buttons">
-          <Button icon="layers" active={layersOpen} onClick={() => setLayersOpen(!layersOpen)} aria-label="Layers" />
-          <Button icon="plus" onClick={() => zoomBy(1.4)} aria-label="Zoom in" />
-          <Button icon="minus" onClick={() => zoomBy(1 / 1.4)} aria-label="Zoom out" />
-          <Button icon="zoom-to-fit" onClick={() => setView(null)} aria-label="Fit" />
-        </ButtonGroup>
+        <div className="hud-buttons">
+          <Button size="small" variant="minimal" icon="layers" active={layersOpen} onClick={() => setLayersOpen(!layersOpen)} aria-label="Layers" />
+          <Button size="small" variant="minimal" icon="plus" onClick={() => zoomBy(1.4)} aria-label="Zoom in" />
+          <Button size="small" variant="minimal" icon="minus" onClick={() => zoomBy(1 / 1.4)} aria-label="Zoom out" />
+          <Button size="small" variant="minimal" icon="zoom-to-fit" onClick={() => setView(null)} aria-label="Fit" />
+        </div>
         {layersOpen && (
           <div className="layers-panel">
-            <div className="hud-title">LAYERS</div>
+            <div className="section-title">Layers</div>
             {LAYERS.map((l) => (
               <Checkbox
                 key={l.key}
@@ -562,28 +562,26 @@ export function MapView() {
                 onChange={() => setLayers({ ...layers, [l.key]: !layers[l.key] })}
               />
             ))}
-            <div className="legend">
-              <span className="lg-radar">+</span> radar plot <span className="lg-eo">■</span> EO plot{" "}
-              <span className="lg-bft">●</span> BFT
-            </div>
           </div>
         )}
       </div>
 
       <div className="hud hud-bl">
-        {cursor ? (
-          <>
-            GRID {toGrid(cursor)} · EL {Math.round(heightAt(cursor.x, cursor.y))} M
-          </>
-        ) : (
-          <>GRID ----- ----- · EL --- M</>
-        )}
+        <div className="mono">
+          {cursor ? `${toGrid(cursor)} · EL ${Math.round(heightAt(cursor.x, cursor.y))} M` : "----- ----- · EL --- M"}
+        </div>
       </div>
 
       <div className="hud hud-br">
-        <svg width={28} height={40} viewBox="-14 -20 28 40" className="north">
-          <path d="M0 -16L7 8L0 3L-7 8Z" />
-          <text y={18} textAnchor="middle">
+        <div className="hud-key">
+          <span className="key-swatch" style={{ background: IDENTITY.friend }} /> FRD
+          <span className="key-swatch" style={{ background: IDENTITY.hostile }} /> HOS
+          <span className="key-swatch outline" /> UNK
+          <span className="key-swatch" style={{ background: IDENTITY.neutral }} /> NEU
+        </div>
+        <svg width={20} height={30} viewBox="-10 -16 20 32" className="north">
+          <path d="M0 -13L5.5 6L0 2L-5.5 6Z" />
+          <text y={15} textAnchor="middle">
             N
           </text>
         </svg>
@@ -595,11 +593,6 @@ export function MapView() {
             0 <span>{scaleM} M</span>
           </div>
         </div>
-      </div>
-
-      <div className="hud hud-friend-key">
-        <span style={{ background: FILL.friend }} /> FRD <span style={{ background: FILL.hostile }} /> HOS{" "}
-        <span style={{ background: FILL.unknown }} /> UNK <span style={{ background: FILL.neutral }} /> NEU
       </div>
     </div>
   );

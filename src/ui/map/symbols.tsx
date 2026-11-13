@@ -1,20 +1,20 @@
 import type { MouseEvent, ReactNode } from "react";
 import type { Affiliation, TrackStatus } from "../../ontology/schema";
 
-export const FILL = {
-  friend: "#80E0FF",
-  hostile: "#FF8080",
-  neutral: "#AAFFAA",
-  unknown: "#FFFF80",
+export const IDENTITY = {
+  friend: "#4c8fe8",
+  hostile: "#e5534b",
+  unknown: "#c3c8cd",
+  neutral: "#7d858c",
 };
 
 export const AFFILIATION_COLOR: Record<Affiliation, string> = {
-  Unknown: FILL.unknown,
-  Hostile: "#FF5A5A",
-  Neutral: "#7FE07F",
+  Unknown: IDENTITY.unknown,
+  Hostile: IDENTITY.hostile,
+  Neutral: IDENTITY.neutral,
 };
 
-const INK = "#07090b";
+const INK = "#0b0d0f";
 
 interface SymbolProps {
   x: number;
@@ -31,7 +31,7 @@ function Frame({ x, y, k, selected, onPick, children, half = 20 }: SymbolProps &
       {selected && (
         <path
           className="sel-bracket"
-          d={`M${-s} ${-s + 8}V${-s}H${-s + 8}M${s - 8} ${-s}H${s}V${-s + 8}M${s} ${s - 8}V${s}H${s - 8}M${-s + 8} ${s}H${-s}V${s - 8}`}
+          d={`M${-s} ${-s + 7}V${-s}H${-s + 7}M${s - 7} ${-s}H${s}V${-s + 7}M${s} ${s - 7}V${s}H${s - 7}M${-s + 7} ${s}H${-s}V${s - 7}`}
         />
       )}
       {children}
@@ -39,12 +39,13 @@ function Frame({ x, y, k, selected, onPick, children, half = 20 }: SymbolProps &
   );
 }
 
-function Labels({ lines, x = 24, y = -3 }: { lines: (string | null)[]; x?: number; y?: number }) {
+function Labels({ lines, x = 24, y = -2 }: { lines: (string | null)[]; x?: number; y?: number }) {
   const shown = lines.filter((l): l is string => !!l);
+  if (shown.length === 0) return null;
   return (
     <text x={x} y={y} className="sym-label">
       {shown.map((l, i) => (
-        <tspan key={i} x={x} dy={i === 0 ? 0 : 13} className={i === 0 ? "sym-label-main" : "sym-label-sub"}>
+        <tspan key={i} x={x} dy={i === 0 ? 0 : 12} className={i === 0 ? "sym-label-main" : "sym-label-sub"}>
           {l}
         </tspan>
       ))}
@@ -58,46 +59,62 @@ export function GroundUnitSymbol(
   const { icon, echelon, lines } = props;
   return (
     <Frame {...props}>
-      <rect x={-18} y={-12} width={36} height={24} fill={FILL.friend} stroke={INK} strokeWidth={1.6} />
+      <rect x={-16} y={-11} width={32} height={22} fill={IDENTITY.friend} stroke={INK} strokeWidth={1.4} />
       {icon === "infantry" ? (
-        <path d="M-18 -12L18 12M18 -12L-18 12" stroke={INK} strokeWidth={1.4} />
+        <path d="M-16 -11L16 11M16 -11L-16 11" stroke={INK} strokeWidth={1.3} />
       ) : (
-        <path d="M-18 12L18 -12" stroke={INK} strokeWidth={1.4} />
+        <path d="M-16 11L16 -11" stroke={INK} strokeWidth={1.3} />
       )}
       {echelon === "squad" ? (
-        <circle cx={0} cy={-17} r={2.2} fill="#e6edf3" />
+        <circle cx={0} cy={-15.5} r={2} className="echelon" />
       ) : (
-        <g stroke="#e6edf3" strokeWidth={1.3} fill="none">
-          <circle cx={0} cy={-18} r={3.5} />
-          <path d="M-5 -14L5 -22" />
+        <g className="echelon-line">
+          <circle cx={0} cy={-16.5} r={3.2} />
+          <path d="M-4.5 -13L4.5 -20" />
         </g>
       )}
-      <Labels lines={lines} />
+      <Labels lines={lines} x={21} />
     </Frame>
   );
 }
 
-export function AirSymbol(props: SymbolProps & { icon: "rotary" | "uav"; lines: (string | null)[]; landed?: boolean }) {
+export function AirSymbol(
+  props: SymbolProps & { icon: "rotary" | "uav" | "fpv"; lines: (string | null)[]; landed?: boolean },
+) {
   const { icon, lines, landed } = props;
+  if (icon === "fpv") {
+    return (
+      <Frame {...props} half={9}>
+        <path d="M-8 4A8 8 0 0 1 8 4Z" fill={IDENTITY.friend} stroke={INK} strokeWidth={1.2} />
+        <path d="M-4 1L0 -2L4 1" fill="none" stroke={INK} strokeWidth={1.2} />
+        <Labels lines={lines} x={12} y={2} />
+      </Frame>
+    );
+  }
   return (
-    <Frame {...props} half={18}>
-      <path d="M-17 7A17 17 0 0 1 17 7Z" fill={landed ? "#5aa9c2" : FILL.friend} stroke={INK} strokeWidth={1.6} />
+    <Frame {...props} half={16}>
+      <path
+        d="M-15 6A15 15 0 0 1 15 6Z"
+        fill={landed ? "#2f5f9e" : IDENTITY.friend}
+        stroke={INK}
+        strokeWidth={1.4}
+      />
       {icon === "rotary" ? (
-        <path d="M-10 -5L0 0L-10 5ZM10 -5L0 0L10 5Z" fill={INK} />
+        <path d="M-9 -4L0 0L-9 4ZM9 -4L0 0L9 4Z" fill={INK} />
       ) : (
-        <path d="M-11 -6L0 3L11 -6L0 -1Z" fill={INK} />
+        <path d="M-10 -5L0 2.5L10 -5L0 -1Z" fill={INK} />
       )}
-      <Labels lines={lines} x={22} />
+      <Labels lines={lines} x={20} />
     </Frame>
   );
 }
 
-export function RadarSymbol(props: SymbolProps & { lines: string[] }) {
+export function RadarSymbol(props: SymbolProps & { lines: (string | null)[] }) {
   return (
-    <Frame {...props} half={14}>
-      <circle r={13} fill={FILL.friend} stroke={INK} strokeWidth={1.6} />
-      <path d="M-8 4L-4 -5L0 4L4 -5L8 4" fill="none" stroke={INK} strokeWidth={1.6} strokeLinejoin="round" />
-      <Labels lines={props.lines} x={19} />
+    <Frame {...props} half={12}>
+      <circle r={11} fill={IDENTITY.friend} stroke={INK} strokeWidth={1.4} />
+      <path d="M-7 3.5L-3.5 -4.5L0 3.5L3.5 -4.5L7 3.5" fill="none" stroke={INK} strokeWidth={1.4} strokeLinejoin="round" />
+      <Labels lines={props.lines} x={16} />
     </Frame>
   );
 }
@@ -108,58 +125,52 @@ export function TrackSymbol(
   const { affiliation, status, lines, selected } = props;
   if (status === "Tentative") {
     return (
-      <Frame {...props} half={7}>
-        <circle r={5} fill="none" stroke={FILL.unknown} strokeWidth={1.2} strokeDasharray="2 2" opacity={0.75} />
-        {selected && <Labels lines={lines} x={10} />}
+      <Frame {...props} half={6}>
+        <circle r={3.5} fill="none" stroke={IDENTITY.unknown} strokeWidth={1} opacity={0.5} />
+        {selected && <Labels lines={lines} x={9} />}
       </Frame>
     );
   }
   let frame: ReactNode;
   if (affiliation === "Hostile") {
-    frame = <path d="M0 -15L15 0L0 15L-15 0Z" fill={FILL.hostile} stroke={INK} strokeWidth={1.6} />;
+    frame = <path d="M0 -13L13 0L0 13L-13 0Z" fill={IDENTITY.hostile} stroke={INK} strokeWidth={1.4} />;
   } else if (affiliation === "Neutral") {
-    frame = <rect x={-11} y={-11} width={22} height={22} fill={FILL.neutral} stroke={INK} strokeWidth={1.6} />;
+    frame = <rect x={-9.5} y={-9.5} width={19} height={19} fill={IDENTITY.neutral} stroke={INK} strokeWidth={1.4} />;
   } else {
-    const lobes = [
-      [0, -6],
-      [6, 0],
-      [0, 6],
-      [-6, 0],
-    ];
     frame = (
-      <>
-        {lobes.map(([cx, cy], i) => (
-          <circle key={`s${i}`} cx={cx} cy={cy} r={7.5} fill="none" stroke={INK} strokeWidth={3.2} />
-        ))}
-        {lobes.map(([cx, cy], i) => (
-          <circle key={`f${i}`} cx={cx} cy={cy} r={7.5} fill={FILL.unknown} />
-        ))}
-      </>
+      <path
+        d="M-5 -5A5.6 5.6 0 0 1 5 -5A5.6 5.6 0 0 1 5 5A5.6 5.6 0 0 1 -5 5A5.6 5.6 0 0 1 -5 -5Z"
+        transform="scale(1.15)"
+        fill="#1d2125"
+        stroke={IDENTITY.unknown}
+        strokeWidth={1.5}
+      />
     );
   }
   return (
-    <Frame {...props} half={16}>
+    <Frame {...props} half={14}>
       <g opacity={status === "Coasting" ? 0.5 : 1}>
         {frame}
-        <Labels lines={lines} x={20} />
+        <Labels lines={lines} x={17} />
       </g>
     </Frame>
   );
 }
 
-export function LandingZoneSymbol(props: SymbolProps & { risky: boolean; name: string }) {
+export function LandingZoneSymbol(props: SymbolProps & { risky: boolean; name: string | null }) {
   const { risky, name } = props;
-  const color = risky ? "#ff5a5a" : "#7fe07f";
   return (
-    <Frame {...props} half={18}>
-      <circle r={17} fill="rgba(7,9,11,0.55)" stroke={color} strokeWidth={2} strokeDasharray={risky ? "5 3" : undefined} />
-      <text y={6} textAnchor="middle" className="lz-h" fill={color}>
+    <Frame {...props} half={15}>
+      <circle r={14} className={`lz-ring ${risky ? "risky" : ""}`} />
+      <text y={5} textAnchor="middle" className="lz-h">
         H
       </text>
-      {risky && <path d="M-12 -12L12 12M12 -12L-12 12" stroke={color} strokeWidth={2} />}
-      <text y={33} textAnchor="middle" className="sym-label sym-label-main">
-        {name}
-      </text>
+      {risky && <path d="M-10 -10L10 10M10 -10L-10 10" className="lz-x" />}
+      {name && (
+        <text y={28} textAnchor="middle" className="sym-label sym-label-main">
+          {name}
+        </text>
+      )}
     </Frame>
   );
 }

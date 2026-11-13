@@ -103,6 +103,7 @@ export interface PropsByType {
     order: number;
     status: PhaseStatus;
     startedAt: number | null;
+    endedAt: number | null;
   };
   Sensor: {
     name: string;
@@ -267,6 +268,7 @@ export const OBJECT_TYPES: Record<ObjectTypeId, ObjectTypeDef> = {
       { key: "status", label: "Status", format: "status" },
       { key: "order", label: "Order", format: "number" },
       { key: "startedAt", label: "Started", format: "clock" },
+      { key: "endedAt", label: "Ended", format: "clock" },
     ],
   },
   Sensor: {

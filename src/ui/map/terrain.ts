@@ -222,9 +222,10 @@ export function hillshadeDataUrl(): string | null {
       const shade = Math.max(0, (-dzdx * light.x - dzdy * light.y + light.z) / len);
       const elev = Math.max(0, Math.min(1, (heightAt(x, y) - 372) / 45));
       const k = (py * w + px) * 4;
-      img.data[k] = 14 + shade * 26 + elev * 10;
-      img.data[k + 1] = 18 + shade * 28 + elev * 8;
-      img.data[k + 2] = 20 + shade * 26 + elev * 2;
+      const v = 17 + shade * 20 + elev * 7;
+      img.data[k] = v;
+      img.data[k + 1] = v + 1;
+      img.data[k + 2] = v + 2;
       img.data[k + 3] = 255;
     }
   }

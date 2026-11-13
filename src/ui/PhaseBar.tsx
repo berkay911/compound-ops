@@ -1,8 +1,7 @@
-import { Button, Icon, Tag, Tooltip } from "@blueprintjs/core";
+import { Button } from "@blueprintjs/core";
 import { useOps } from "./world";
 import { phases, region } from "../ontology/queries";
 import { ACTIONS } from "../ontology/actions";
-import { statusIntent } from "./format";
 
 const startPhase = ACTIONS.find((a) => a.id === "startPhase")!;
 const abortMission = ACTIONS.find((a) => a.id === "abortMission")!;
@@ -14,45 +13,43 @@ export function PhaseBar() {
 
   return (
     <div className="phasebar">
-      {phases(store).map((phase, i) => {
-        const reason = startPhase.check(store, phase, {});
+      {phases(store).map((phase) => {
+        const startable = startPhase.check(store, phase, {}) === null;
+        const label = phase.props.name.replace(/^P\d /, "");
+        const state = phase.props.status.toLowerCase();
         return (
-          <div key={phase.id} className="phase-wrap">
-            {i > 0 && <Icon icon="chevron-right" className="phase-arrow" />}
-            <div
-              className={`phase ${phase.props.status.toLowerCase()} ${selectedId === phase.id ? "selected" : ""}`}
-              onClick={() => select(phase.id)}
-            >
-              <div className="phase-name">{phase.props.name}</div>
-              <Tag minimal intent={statusIntent(phase.props.status)}>
-                {phase.props.status}
-              </Tag>
-              {reason === null && (
-                <Button
-                  size="small"
-                  intent="primary"
-                  icon="play"
-                  text="Start"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    startPhase.apply(store, phase, {});
-                  }}
-                />
-              )}
-            </div>
+          <div
+            key={phase.id}
+            className={`phase ${state} ${startable ? "startable" : ""} ${selectedId === phase.id ? "selected" : ""}`}
+            onClick={() => select(phase.id)}
+          >
+            <span className="phase-index">{phase.props.order}</span>
+            {startable ? (
+              <button
+                className="phase-go"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  startPhase.apply(store, phase, {});
+                }}
+              >
+                {label}
+              </button>
+            ) : (
+              <span className="phase-name">{label}</span>
+            )}
+            <span className="phase-state">{phase.props.status === "Pending" ? "" : phase.props.status}</span>
           </div>
         );
       })}
-      <div className="spacer" />
-      <Tooltip content={abortReason ?? "Pull every element back to its LZ"} placement="bottom">
-        <Button
-          intent="danger"
-          icon="warning-sign"
-          text="Abort"
-          disabled={abortReason !== null}
-          onClick={() => abortMission.apply(store, r, {})}
-        />
-      </Tooltip>
+      <Button
+        size="small"
+        variant="outlined"
+        className="abort"
+        text="Abort"
+        title={abortReason ?? "Pull every element back to its LZ"}
+        disabled={abortReason !== null}
+        onClick={() => abortMission.apply(store, r, {})}
+      />
     </div>
   );
 }

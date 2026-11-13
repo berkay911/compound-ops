@@ -318,6 +318,6 @@ export class Tracker {
     for (const id of t.detectionIds) this.store.remove(id);
     this.store.remove(t.id);
     this.tracks = this.tracks.filter((x) => x !== t);
-    if (announce) this.store.log("sim", `${t.label} dropped`, []);
+    if (announce) this.store.log("sim", `${t.label} dropped`, [], "sensors");
   }
 }

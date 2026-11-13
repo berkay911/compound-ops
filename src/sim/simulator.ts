@@ -26,7 +26,8 @@ import {
   type RawDetection,
 } from "./sensors";
 import { Tracker } from "./tracker";
-import { entryGate, planRoute } from "./routing";
+import { entryGate } from "./routing";
+import { buildNavGrid, findPath, type NavGrid } from "./nav";
 
 const HELO_SPEED = 18;
 const UNIT_SPEED = 11;
@@ -64,9 +65,16 @@ export class Simulator {
   private radarAngle = 0;
   private nextEoScanMs = 0;
   private alerted = new Set<string>();
+  readonly nav: NavGrid;
 
   constructor(private store: OntologyStore) {
     this.tracker = new Tracker(store, { [RADAR.id]: RADAR.name, [EO.id]: EO.name });
+    const compound = store.list("Compound")[0];
+    this.nav = buildNavGrid({
+      wall: compound?.props.wall ?? [],
+      gates: compound?.props.gates ?? [],
+      buildings: store.list("Structure").map((s) => s.props.rect),
+    });
   }
 
   tick(dtMs: number): void {
@@ -239,7 +247,7 @@ export class Simulator {
       if (!compound) return { goal: null, arrivedStatus: "Holding" };
       let gate = compound.props.gates.find((g) => g.name === unit.props.entryGate);
       if (!gate) {
-        gate = entryGate(compound.props.gates, unit.props.pos, objective.props.door);
+        gate = entryGate(this.nav, compound.props.gates, unit.props.pos, objective.props.door);
         store.update(unit, { entryGate: gate.name });
         store.log("sim", `${unit.props.callsign} routing to ${gate.name} for ${objective.props.name}`, [unit.id]);
       }
@@ -259,11 +267,7 @@ export class Simulator {
     const store = this.store;
     const p = unit.props;
     if (!samePoint(p.routeGoal, goal)) {
-      const compound = store.list("Compound")[0];
-      const route = compound
-        ? planRoute(compound.props.wall, compound.props.gates, p.pos, goal, p.entryGate)
-        : [{ ...goal }];
-      store.update(unit, { route, routeGoal: { ...goal } });
+      store.update(unit, { route: findPath(this.nav, p.pos, goal), routeGoal: { ...goal } });
     }
     let step = UNIT_SPEED * dt;
     while (step > 0 && p.route.length > 0) {
@@ -470,7 +474,7 @@ export class Simulator {
     switch (phase.props.order) {
       case PHASE.INFIL:
         if (units.every((u) => !carrierOf(store, u))) {
-          store.update(phase, { status: "Complete" });
+          store.update(phase, { status: "Complete", endedAt: store.clockMs });
           store.log("system", "P1 Infil complete. All elements on the ground.", [phase.id]);
         }
         break;
@@ -478,7 +482,7 @@ export class Simulator {
       case PHASE.APPROACH: {
         const tasked = units.filter((u) => u.props.role === "Overwatch" || objectiveOf(store, u));
         if (tasked.length > 0 && tasked.every((u) => u.props.status === "In position")) {
-          store.update(phase, { status: "Complete" });
+          store.update(phase, { status: "Complete", endedAt: store.clockMs });
           store.log("system", "P2 Approach complete. All elements set. Ready for Assault.", [phase.id]);
         }
         break;
@@ -486,7 +490,7 @@ export class Simulator {
 
       case PHASE.EXFIL:
         if (units.every((u) => u.props.status === "Extracted")) {
-          store.update(phase, { status: "Complete" });
+          store.update(phase, { status: "Complete", endedAt: store.clockMs });
           const aborted = phases(store).some((p) => p.props.status === "Aborted");
           store.update(region(store), { missionStatus: aborted ? "Aborted" : "Complete" });
           store.log(

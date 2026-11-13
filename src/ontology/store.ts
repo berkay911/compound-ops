@@ -14,11 +14,13 @@ export interface LinkInstance {
 }
 
 export type EventKind = "sim" | "action" | "system" | "warning";
+export type Lane = "phase" | "maneuver" | "clearing" | "sensors" | "fires" | "operator";
 
 export interface OpsEvent {
   seq: number;
   timeMs: number;
   kind: EventKind;
+  lane: Lane;
   text: string;
   refs: string[];
 }
@@ -153,10 +155,20 @@ export class OntologyStore {
     return out;
   }
 
-  log(kind: EventKind, text: string, refs: string[] = []): void {
+  log(kind: EventKind, text: string, refs: string[] = [], lane?: Lane): void {
     this.eventSeq++;
-    this.eventLog.push({ seq: this.eventSeq, timeMs: this.clockMs, kind, text, refs });
+    this.eventLog.push({ seq: this.eventSeq, timeMs: this.clockMs, kind, lane: lane ?? this.laneFor(kind, refs), text, refs });
     this.changed();
+  }
+
+  private laneFor(kind: EventKind, refs: string[]): Lane {
+    if (kind === "action") return "operator";
+    const objs = refs.map((id) => this.objects.get(id)).filter((o): o is OntObject => !!o);
+    const has = (t: ObjectTypeId) => objs.some((o) => o.type === t);
+    if (has("Track")) return "sensors";
+    if (has("Structure") || has("Compound")) return "clearing";
+    if (has("Unit") || has("Platform") || has("LandingZone")) return "maneuver";
+    return "phase";
   }
 
   get events(): readonly OpsEvent[] {

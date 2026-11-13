@@ -16,7 +16,7 @@ export function loadScenario(store: OntologyStore): void {
   const phaseNames = ["Infil", "Approach", "Assault", "Exfil"];
   phaseNames.forEach((name, i) => {
     const id = `phase-${i + 1}`;
-    store.add("Phase", id, { name: `P${i + 1} ${name}`, order: i + 1, status: "Pending", startedAt: null });
+    store.add("Phase", id, { name: `P${i + 1} ${name}`, order: i + 1, status: "Pending", startedAt: null, endedAt: null });
     store.link("regionPhase", region.id, id);
   });
 

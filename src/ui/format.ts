@@ -1,4 +1,3 @@
-import type { Intent } from "@blueprintjs/core";
 import type { PropertyFormat } from "../ontology/schema";
 import { toGrid } from "./grid";
 
@@ -34,40 +33,14 @@ export function formatValue(value: unknown, format: PropertyFormat): string {
   }
 }
 
-const SUCCESS = new Set([
-  "Secured",
-  "Cleared",
-  "Complete",
-  "Suitable",
-  "In position",
-  "Extracted",
-  "RTB complete",
-  "Operational",
-  "Neutral",
-]);
-const DANGER = new Set(["Risky", "Aborted", "Hostile"]);
-const WARNING = new Set([
-  "Clearing",
-  "Clear reported",
-  "Contested",
-  "Possible",
-  "Active",
-  "Inbound",
-  "Moving",
-  "Assaulting",
-  "Egress",
-  "In progress",
-  "Coasting",
-]);
-const PRIMARY = new Set(["Landed", "Embarked", "On station", "On ground", "Holding"]);
+const ALERT = new Set(["Risky", "Aborted", "Confirmed", "Contested", "Coasting"]);
 
-export function statusIntent(value: unknown, key = "status"): Intent {
+export function toneOf(value: unknown, key = "status"): string {
   const v = String(value);
-  if (v === "Confirmed") return key === "threat" ? "danger" : "primary";
-  if (v === "Unknown" && key === "affiliation") return "warning";
-  if (SUCCESS.has(v)) return "success";
-  if (DANGER.has(v)) return "danger";
-  if (WARNING.has(v)) return "warning";
-  if (PRIMARY.has(v)) return "primary";
-  return "none";
+  if (v === "Hostile") return "tone-hostile";
+  if (key === "affiliation" && v === "Friendly") return "tone-friend";
+  if (key === "status" && v === "Confirmed") return "";
+  if (ALERT.has(v)) return "tone-alert";
+  if (v === "Pending" || v === "Unknown" || v === "None" || v === "—") return "tone-dim";
+  return "";
 }

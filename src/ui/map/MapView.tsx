@@ -198,6 +198,15 @@ export function MapView() {
     return () => el.removeEventListener("wheel", onWheel);
   }, []);
 
+  useEffect(() => {
+    const onView = (e: Event) => {
+      const { cx, cy, zoom } = (e as CustomEvent<{ cx: number; cy: number; zoom: number }>).detail;
+      setView({ cx, cy, z: latest.current.fitZ * zoom });
+    };
+    window.addEventListener("ops:view", onView);
+    return () => window.removeEventListener("ops:view", onView);
+  }, []);
+
   const zoomBy = (f: number) => {
     const z = Math.min(Math.max(v.z * f, fitZ * 0.6), fitZ * 12);
     setView({ cx: v.cx, cy: v.cy, z });

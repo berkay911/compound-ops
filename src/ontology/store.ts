@@ -1,7 +1,3 @@
-// In-memory ontology store: objects, typed links between them, and an event
-// log. Mutations are coalesced into a single change notification per
-// microtask so the UI re-renders once per simulation tick or action.
-
 import {
   LINK_TYPES,
   type LinkTypeDef,
@@ -44,10 +40,7 @@ export class OntologyStore {
   private eventSeq = 0;
   private idSeq = 0;
 
-  /** Mission clock in milliseconds since H-hour. */
   clockMs = 0;
-
-  // ---- subscription -------------------------------------------------------
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -65,8 +58,6 @@ export class OntologyStore {
       for (const l of this.listeners) l();
     });
   }
-
-  // ---- objects ------------------------------------------------------------
 
   nextId(prefix: string): string {
     this.idSeq++;
@@ -103,15 +94,12 @@ export class OntologyStore {
     this.changed();
   }
 
-  // ---- links --------------------------------------------------------------
-
   link(type: LinkTypeId, from: string, to: string): void {
     if (this.links.some((l) => l.type === type && l.from === from && l.to === to)) return;
     this.links.push({ type, from, to });
     this.changed();
   }
 
-  /** Removes links of a type from an object; if `to` is given, only that one. */
   unlink(type: LinkTypeId, from: string, to?: string): void {
     const before = this.links.length;
     this.links = this.links.filter(
@@ -120,7 +108,6 @@ export class OntologyStore {
     if (this.links.length !== before) this.changed();
   }
 
-  /** Objects reached from `id` along `type` (forward) or against it (reverse). */
   linked<T extends ObjectTypeId>(
     id: string,
     type: LinkTypeId,
@@ -145,7 +132,6 @@ export class OntologyStore {
     return this.linked<T>(id, type, direction)[0];
   }
 
-  /** Every link touching the object, grouped later by the UI. */
   linksOf(id: string): ResolvedLink[] {
     const out: ResolvedLink[] = [];
     for (const l of this.links) {
@@ -161,8 +147,6 @@ export class OntologyStore {
     return out;
   }
 
-  // ---- events -------------------------------------------------------------
-
   log(kind: EventKind, text: string, refs: string[] = []): void {
     this.eventSeq++;
     this.eventLog.push({ seq: this.eventSeq, timeMs: this.clockMs, kind, text, refs });
@@ -173,7 +157,6 @@ export class OntologyStore {
     return this.eventLog;
   }
 
-  /** Marks the store changed without touching any object (e.g. clock tick). */
   touch(): void {
     this.changed();
   }

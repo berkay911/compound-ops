@@ -1,7 +1,3 @@
-// Ontology schema: the object types, their properties, and the link types
-// between them. Everything in the UI (tree, detail panel, link navigation)
-// is rendered from these definitions rather than hard-coded per type.
-
 export interface Point {
   x: number;
   y: number;
@@ -251,9 +247,7 @@ export interface LinkTypeDef {
   id: LinkTypeId;
   from: ObjectTypeId;
   to: ObjectTypeId;
-  /** Label as seen from the "from" object. */
   forwardLabel: string;
-  /** Label as seen from the "to" object. */
   reverseLabel: string;
 }
 

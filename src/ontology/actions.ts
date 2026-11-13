@@ -1,7 +1,3 @@
-// Ontology actions: the only way an operator changes the world. Each action
-// declares which object type it applies to, validates itself against the
-// current state, and may cascade changes across linked objects.
-
 import type { ObjectTypeId, OntObject } from "./schema";
 import type { OntologyStore } from "./store";
 import {
@@ -32,7 +28,6 @@ export interface ActionDef {
   intent: ActionIntent;
   appliesTo: ObjectTypeId;
   params: ActionParam[];
-  /** Returns null when the action may run, otherwise the reason it cannot. */
   check(store: OntologyStore, target: OntObject, params: ActionParams): string | null;
   apply(store: OntologyStore, target: OntObject, params: ActionParams): void;
 }
@@ -186,8 +181,6 @@ const markLzRisky = defineAction({
     store.update(lz, { status: "Risky" });
     store.log("action", `${lz.props.name} marked risky`, [lz.id]);
 
-    // Cascade: every platform assigned here is re-linked to the alternate,
-    // so its next landing (and the units' exfil route) goes there instead.
     const alt = alternateLz(store, lz);
     for (const platform of store.linked<"Platform">(lz.id, "platformLz", "reverse")) {
       if (platform.props.status === "Landed") {
@@ -233,7 +226,6 @@ const confirmObservation = defineAction({
   apply(store, o) {
     store.update(o, { status: "Confirmed" });
     store.log("action", `Observation confirmed: ${o.props.summary}`, [o.id]);
-    // Cascade: a confirmed observation raises the threat on its structure.
     for (const s of store.linked<"Structure">(o.id, "observationStructure")) {
       if (s.props.threat !== "Confirmed" && s.props.status !== "Cleared") {
         store.update(s, { threat: "Confirmed" });

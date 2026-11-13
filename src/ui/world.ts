@@ -22,7 +22,6 @@ export interface OpsContextValue {
 
 export const OpsContext = createContext<OpsContextValue | null>(null);
 
-/** Gives components the store and re-renders them whenever it changes. */
 export function useOps(): OpsContextValue & { store: OntologyStore; version: number } {
   const ctx = useContext(OpsContext);
   if (!ctx) throw new Error("useOps outside OpsContext");

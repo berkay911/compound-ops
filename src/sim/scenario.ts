@@ -1,6 +1,3 @@
-// Fictional scenario. All names, places and coordinates are invented; the map
-// is an abstract 1000 x 700 grid.
-
 import type { OntologyStore } from "../ontology/store";
 
 export const MAP = { width: 1000, height: 700 } as const;
@@ -15,7 +12,6 @@ export function loadScenario(store: OntologyStore): void {
     holdingArea: { x: 190, y: 640 },
   });
 
-  // ---- plan -----------------------------------------------------------------
   const phaseNames = ["Infil", "Approach", "Assault", "Exfil"];
   phaseNames.forEach((name, i) => {
     const id = `phase-${i + 1}`;
@@ -23,7 +19,6 @@ export function loadScenario(store: OntologyStore): void {
     store.link("regionPhase", region.id, id);
   });
 
-  // ---- objective --------------------------------------------------------------
   const compound = store.add("Compound", "obj-falcon", {
     name: "OBJ FALCON",
     status: "Unknown",
@@ -89,13 +84,11 @@ export function loadScenario(store: OntologyStore): void {
     store.link("compoundStructure", compound.id, s.id);
   }
 
-  // ---- landing zones ----------------------------------------------------------
   store.add("LandingZone", "hlz-raven", { name: "HLZ RAVEN", role: "Primary", status: "Suitable", pos: { x: 400, y: 540 } });
   store.add("LandingZone", "hlz-crow", { name: "HLZ CROW", role: "Alternate", status: "Suitable", pos: { x: 860, y: 150 } });
   store.link("regionLz", region.id, "hlz-raven");
   store.link("regionLz", region.id, "hlz-crow");
 
-  // ---- platforms ----------------------------------------------------------------
   const fob = region.props.fob;
   store.add("Platform", "dusty-1", {
     callsign: "DUSTY-1",
@@ -130,7 +123,6 @@ export function loadScenario(store: OntologyStore): void {
   store.link("platformLz", "dusty-1", "hlz-raven");
   store.link("platformLz", "dusty-2", "hlz-raven");
 
-  // ---- units --------------------------------------------------------------------
   const units = [
     { id: "alpha", callsign: "ALPHA", role: "Assault" as const, personnel: 8, lift: "dusty-1", objective: "b1" },
     { id: "bravo", callsign: "BRAVO", role: "Assault" as const, personnel: 8, lift: "dusty-2", objective: "b2" },

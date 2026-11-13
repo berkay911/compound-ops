@@ -5,7 +5,6 @@ import {
   alternateLz,
   dist,
   missionOver,
-  objectiveOf,
   phaseByOrder,
   phases,
   region,
@@ -81,12 +80,6 @@ const abortMission = defineAction({
       if (p.props.order < PHASE.EXFIL && p.props.status !== "Complete") {
         store.update(p, { status: "Aborted", endedAt: p.props.startedAt === null ? null : store.clockMs });
       }
-    }
-    for (const s of store.list("Structure")) {
-      if (s.props.status === "Clearing") store.update(s, { status: "Uncleared", clearingSince: null });
-    }
-    for (const u of store.list("Unit")) {
-      if (objectiveOf(store, u)) store.unlink("unitObjective", u.id);
     }
     const exfil = phaseByOrder(store, PHASE.EXFIL);
     if (exfil) store.update(exfil, { status: "Active", startedAt: store.clockMs });

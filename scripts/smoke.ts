@@ -7,6 +7,10 @@ import { formatClock } from "../src/ui/format";
 import { insidePolygon } from "../src/sim/routing";
 import { MIN_FRIENDLY_M } from "../src/sim/fires";
 import type { Point } from "../src/ontology/schema";
+import { Replica, type MergeKind } from "../src/sim/replica";
+import { mulberry32 } from "../src/sim/random";
+import { COC_ID } from "../src/sim/comms";
+import { keys } from "../src/sim/edge";
 
 let store!: OntologyStore;
 let sim!: Simulator;
@@ -124,7 +128,65 @@ if (ACTIONS.some((a) => a.id === "assignObjective" || a.id === "markCleared")) {
   throw new Error("manual objective assignment or clear confirmation still exists");
 }
 
-console.log("run 1: hands-off raid, operator presses only the four phase buttons");
+console.log("crdt: randomized merge properties");
+{
+  const rng = mulberry32(7);
+  const kinds: MergeKind[] = ["lww", "max", "fww"];
+  const keyKind = (k: number) => kinds[k % 3];
+  for (let trial = 0; trial < 200; trial++) {
+    const reps = ["a", "b", "c", "d", "e"].map((n) => new Replica(n));
+    for (let op = 0; op < 60; op++) {
+      const r = reps[Math.floor(rng() * reps.length)];
+      if (rng() < 0.25) {
+        r.merge(reps[Math.floor(rng() * reps.length)]);
+        continue;
+      }
+      const k = Math.floor(rng() * 8);
+      r.write(`k${k}`, Math.floor(rng() * 5), keyKind(k), Math.floor(rng() * 50), Math.floor(rng() * 3));
+      if (rng() < 0.2) r.events.add(Math.floor(rng() * 100));
+    }
+    const x = reps[0];
+    const y = reps[1];
+    const xy = new Replica("t");
+    xy.merge(x);
+    xy.merge(y);
+    const yx = new Replica("t");
+    yx.merge(y);
+    yx.merge(x);
+    if (xy.digest() !== yx.digest()) fail(`trial ${trial}: merge is not commutative`);
+    const again = new Replica("t");
+    again.merge(xy);
+    if (again.merge(xy) !== 0 || again.digest() !== xy.digest()) fail(`trial ${trial}: merge is not idempotent`);
+    const left = new Replica("t");
+    left.merge(x);
+    left.merge(y);
+    left.merge(reps[2]);
+    const inner = new Replica("t");
+    inner.merge(y);
+    inner.merge(reps[2]);
+    const right = new Replica("t");
+    right.merge(x);
+    right.merge(inner);
+    if (left.digest() !== right.digest()) fail(`trial ${trial}: merge is not associative`);
+    const order = [...reps].sort(() => rng() - 0.5);
+    for (let pass = 0; pass < 2; pass++) for (const a of order) for (const b of reps) a.merge(b);
+    if (new Set(reps.map((r) => r.digest())).size !== 1) fail(`trial ${trial}: replicas did not converge`);
+  }
+  const claim = new Replica("x");
+  claim.write("claim/b4", "alpha", "fww", 10);
+  const other = new Replica("y");
+  other.write("claim/b4", "bravo", "fww", 12);
+  claim.merge(other);
+  other.merge(claim);
+  if (claim.get("claim/b4") !== "alpha" || other.get("claim/b4") !== "alpha") fail("first claim did not win");
+  const st = new Replica("x");
+  st.write("structure/b1", "Cleared", "max", 5, 2);
+  st.write("structure/b1", "Clearing", "max", 9, 1);
+  if (st.get("structure/b1") !== "Cleared") fail("structure status went backwards");
+  console.log("     200 random trials: commutative, associative, idempotent, convergent; first claim wins; status never regresses");
+}
+
+console.log("\nrun 1: hands-off raid, operator presses only the four phase buttons");
 fresh();
 run("startPhase", "phase-1");
 until("P1 Infil", phaseDone(PHASE.INFIL));
@@ -142,6 +204,32 @@ console.log(
     .map((s) => `${s.props.name.split(" ")[0]}:${s.props.clearedBy}`)
     .join(" ")}`,
 );
+const unitName = (id: string) => store.getAs("Unit", id).props.callsign;
+const closed = sim.edge.outages.filter((o) => o.to !== null && o.to - o.from >= 20_000);
+for (const team of ["alpha", "bravo"]) {
+  if (!closed.some((o) => o.unit === team)) fail(`${team} never lost contact under jamming`);
+}
+const late = store.events.filter((e) => e.origin !== COC_ID && e.receivedMs !== null && e.receivedMs - e.timeMs >= 5000);
+const clearedLate = late.filter((e) => / cleared /.test(e.text));
+if (clearedLate.length === 0) fail("no building was cleared while its team was cut off");
+console.log(
+  `     jammed: ${closed.map((o) => `${unitName(o.unit)} ${Math.round((o.to! - o.from) / 1000)} s`).join(", ")} without contact; teams kept clearing (${clearedLate
+    .map((e) => e.text.split(" cleared ")[1].split(" ")[0])
+    .join(", ")} reported late), ${late.length} reports backfilled up to ${Math.round(
+    Math.max(...late.map((e) => e.receivedMs! - e.timeMs)) / 1000,
+  )} s late`,
+);
+sim.tick(1100);
+const digests = new Set([...sim.edge.replicas.values()].map((r) => r.digest()));
+if (digests.size !== 1) fail(`replicas diverged after contact restored (${digests.size} versions)`);
+for (const x of store.list("Structure")) {
+  if (sim.edge.structureIn(sim.edge.coc, x.id).status !== x.props.status) fail(`COC picture of ${x.props.name} is wrong`);
+}
+for (const u of store.list("Unit")) {
+  const p = sim.edge.coc.get<Point>(keys.pos(u.id))!;
+  if (dist(p, u.props.pos) > 12) fail(`COC picture of ${u.props.callsign} is ${dist(p, u.props.pos).toFixed(0)} m off`);
+}
+console.log("     after contact: COC and all team replicas identical, COC picture matches ground truth");
 const holdAt = new Map(store.list("Unit").map((u) => [u.id, { ...u.props.pos }]));
 const holdUntil = store.clockMs + 30_000;
 until("teams hold in place for 30 s with no Exfil order", () => store.clockMs >= holdUntil);
@@ -152,6 +240,8 @@ for (const u of store.list("Unit")) {
 run("startPhase", "phase-4");
 until("P4 Exfil", () => region(store).props.missionStatus === "Complete");
 
+const lost = store.events.filter((e) => e.receivedMs === null);
+if (lost.length > 0) fail(`${lost.length} team reports never reached COC`);
 const alive = hostileTruth().filter((t) => t.active);
 if (alive.length > 0) fail(`hostiles still active: ${alive.map((t) => t.id).join(", ")}`);
 if (!sim.targets.find((t) => t.id === "shepherd")!.active) fail("shepherd is not alive");
@@ -216,8 +306,14 @@ const holdEnds = store.clockMs + 20_000;
 until("20 s of WEAPONS HOLD with drones returning", () => store.clockMs >= holdEnds);
 if (sim.fires.impacts.length !== hitsBefore) fail("impact during WEAPONS HOLD");
 console.log("     one click on hold broke off every drone in flight; no impacts during hold");
-run("weaponsFree", "region-granite");
 run("startPhase", "phase-3");
+until("teams cut off by jamming", () => sim.edge.outages.some((o) => o.to === null && o.unit === "alpha"));
+run("weaponsFree", "region-granite");
+const freeAt = store.clockMs;
+until("10 s of WEAPONS FREE while teams are cut off", () => store.clockMs >= freeAt + 10_000);
+const cautious = store.events.filter((e) => /withheld|holding off/.test(e.text) && /last report|jammed/.test(e.text));
+if (cautious.length === 0) fail("fires cell did not account for stale friendly positions or jamming");
+console.log(`     fires cell under jamming: ${cautious[0].text}`);
 until("P3 Assault", phaseDone(PHASE.ASSAULT));
 run("startPhase", "phase-4");
 until("P4 Exfil", () => region(store).props.missionStatus === "Complete");
@@ -233,8 +329,22 @@ until("P1", phaseDone(PHASE.INFIL));
 run("startPhase", "phase-2");
 until("P2", phaseDone(PHASE.APPROACH));
 run("startPhase", "phase-3");
-until("assault under way", () => store.list("Structure").some((s) => s.props.status === "Clearing"));
+until("teams cut off", () => ["alpha", "bravo"].every((id) => sim.edge.outages.some((o) => o.unit === id && o.to === null)));
+const abortAt = store.clockMs;
 run("abortMission", "region-granite");
+const heard = new Map<string, number>();
+until("abort order reached both teams", () => ["alpha", "bravo"].every((id) => heard.has(id)), () => {
+  for (const id of ["alpha", "bravo"]) {
+    if (heard.has(id) || sim.teamOrder(store.getAs("Unit", id)) !== PHASE.EXFIL) continue;
+    if (!sim.edge.net.connected(id, COC_ID)) fail(`${id} received the abort without a path to COC`);
+    heard.set(id, store.clockMs);
+  }
+});
+console.log(
+  `     abort sent at ${formatClock(abortAt)}, reached ${[...heard.entries()]
+    .map(([id, t]) => `${unitName(id)} after ${Math.round((t - abortAt) / 1000)} s`)
+    .join(", ")} (only once a path to COC existed)`,
+);
 until("extracted", () => region(store).props.missionStatus === "Aborted");
 
 console.log(`\nsmoke passed: ${movementChecks} movement checks, closest strike to a friendly ${minStrikeClearance.toFixed(0)} m`);

@@ -14,7 +14,7 @@ export interface LinkInstance {
 }
 
 export type EventKind = "sim" | "action" | "system" | "warning";
-export type Lane = "phase" | "maneuver" | "clearing" | "sensors" | "fires" | "operator";
+export type Lane = "phase" | "maneuver" | "clearing" | "sensors" | "fires" | "comms" | "operator";
 
 export interface OpsEvent {
   seq: number;
@@ -23,6 +23,8 @@ export interface OpsEvent {
   lane: Lane;
   text: string;
   refs: string[];
+  origin: string;
+  receivedMs: number | null;
 }
 
 export interface ResolvedLink {
@@ -155,10 +157,28 @@ export class OntologyStore {
     return out;
   }
 
-  log(kind: EventKind, text: string, refs: string[] = [], lane?: Lane): void {
+  log(kind: EventKind, text: string, refs: string[] = [], lane?: Lane, origin = "coc"): number {
     this.eventSeq++;
-    this.eventLog.push({ seq: this.eventSeq, timeMs: this.clockMs, kind, lane: lane ?? this.laneFor(kind, refs), text, refs });
+    this.eventLog.push({
+      seq: this.eventSeq,
+      timeMs: this.clockMs,
+      kind,
+      lane: lane ?? this.laneFor(kind, refs),
+      text,
+      refs,
+      origin,
+      receivedMs: origin === "coc" ? this.clockMs : null,
+    });
     this.changed();
+    return this.eventSeq;
+  }
+
+  markReceived(seq: number): void {
+    const e = this.eventLog[seq - 1];
+    if (e && e.seq === seq && e.receivedMs === null) {
+      e.receivedMs = this.clockMs;
+      this.changed();
+    }
   }
 
   private laneFor(kind: EventKind, refs: string[]): Lane {

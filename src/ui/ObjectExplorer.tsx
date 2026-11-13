@@ -4,8 +4,15 @@ import type { IconName } from "@blueprintjs/icons";
 import { useOps } from "./world";
 import { OBJECT_TYPES, TYPE_ORDER, titleOf, type ObjectTypeId, type OntObject } from "../ontology/schema";
 import { toneOf } from "./format";
+import { structureStatus, unitPicture } from "./view";
+import type { World } from "./world";
 
-function statusOf(obj: OntObject): { value: string; key: string } | undefined {
+function statusOf(world: World, obj: OntObject): { value: string; key: string } | undefined {
+  if (obj.type === "Unit") {
+    const pic = unitPicture(world, obj as OntObject<"Unit">);
+    return { value: pic.contact ? pic.status : "No contact", key: "status" };
+  }
+  if (obj.type === "Structure") return { value: structureStatus(world, obj as OntObject<"Structure">).status, key: "status" };
   if (obj.type === "Track") {
     const t = obj as OntObject<"Track">;
     return t.props.affiliation === "Unknown"
@@ -21,7 +28,7 @@ const TRACK_RANK = { Confirmed: 0, Coasting: 1, Tentative: 2 };
 const COLLAPSED_BY_DEFAULT: ObjectTypeId[] = ["Sensor", "Phase"];
 
 export function ObjectExplorer() {
-  const { store, selectedId, select } = useOps();
+  const { store, world, selectedId, select } = useOps();
   const [collapsed, setCollapsed] = useState<Set<ObjectTypeId>>(() => new Set(COLLAPSED_BY_DEFAULT));
 
   const toggle = (type: ObjectTypeId) =>
@@ -57,7 +64,7 @@ export function ObjectExplorer() {
             </button>
             {open &&
               objects.map((obj) => {
-                const status = statusOf(obj);
+                const status = statusOf(world, obj);
                 return (
                   <button
                     key={obj.id}

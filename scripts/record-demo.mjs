@@ -114,7 +114,7 @@ async function run(version) {
   console.log("scene 1 frames", n);
 
   await ev(`__ops.select((__ops.store.list("Track").find((t) => t.props.affiliation === "Neutral") || { id: null }).id)`);
-  for (let i = 0; i < 18; i++) {
+  for (let i = 0; i < 10; i++) {
     await step(180);
     await shot();
   }
@@ -123,16 +123,17 @@ async function run(version) {
   for (let i = 0; i < 2000 && !(await phaseDone("phase-1")); i++) await step(200);
   await ev(`__ops.act("startPhase", "phase-2")`);
   for (let i = 0; i < 2000 && !(await phaseDone("phase-2")); i++) await step(200);
-  await ev(`__ops.view(640, 345, 2.5)`);
-  await ev(`__ops.select("bravo")`);
+  await ev(`__ops.view(575, 365, 1.75)`);
+  await ev(`__ops.select("alpha")`);
   for (let i = 0; i < 6; i++) await shot();
   await ev(`__ops.act("startPhase", "phase-3")`);
-  for (let f = 0; f < 220; f++) {
-    await step(300);
+  for (let f = 0; f < 260; f++) {
+    await step(280);
     await shot();
     if (await phaseDone("phase-3")) break;
   }
-  for (let i = 0; i < 16; i++) await shot();
+  await ev(`__ops.select("bravo")`);
+  for (let i = 0; i < 20; i++) await shot();
   console.log("total frames", n, "sim clock", await ev("__ops.store.clockMs"));
 
   ws.close();

@@ -1,6 +1,7 @@
 import { useOps } from "./world";
 import { formatClock } from "./format";
 import type { Lane } from "../ontology/store";
+import { delaySec, visibleEvents } from "./view";
 
 export const LANE_CODE: Record<Lane, string> = {
   phase: "SYS",
@@ -8,12 +9,15 @@ export const LANE_CODE: Record<Lane, string> = {
   clearing: "CLR",
   sensors: "SNS",
   fires: "FIR",
+  comms: "COM",
   operator: "OPR",
 };
 
 export function EventFeed() {
   const { store, select, selectedId } = useOps();
-  const events = [...store.events].reverse().slice(0, 150);
+  const events = visibleEvents(store.events)
+    .sort((a, b) => (b.receivedMs ?? 0) - (a.receivedMs ?? 0) || b.seq - a.seq)
+    .slice(0, 150);
 
   return (
     <div className="log">
@@ -29,7 +33,10 @@ export function EventFeed() {
           >
             <span className="mono dim">{formatClock(e.timeMs)}</span>
             <span className="mono lane-code">{LANE_CODE[e.lane]}</span>
-            <span className="log-text">{e.text}</span>
+            <span className="log-text">
+              {delaySec(e) >= 2 && <span className="delay">+{delaySec(e)}s</span>}
+              {e.text}
+            </span>
           </div>
         ))}
       </div>

@@ -1,8 +1,10 @@
 import type { OntObject, Point, Rect } from "../ontology/schema";
 import type { OntologyStore } from "../ontology/store";
-import { carrierOf, dist, region } from "../ontology/queries";
+import { dist, region } from "../ontology/queries";
 import { toGrid } from "../ui/grid";
-import { FPV_LAUNCH } from "./scenario";
+import { FPV_LAUNCH, UNIT_SPEED } from "./scenario";
+import { COC_ID, RADIO, sinrDb, type RadioNode } from "./comms";
+import { STALE_MS, keys, type Edge } from "./edge";
 import type { TruthTarget } from "./targets";
 
 export const MIN_FRIENDLY_M = 50;
@@ -24,6 +26,28 @@ const PEDESTRIAN_MPS = 3;
 const NEUTRAL_STANDOFF_M = 60;
 const BATTERY_PER_S = 0.25;
 const BATTERY_ABORT = 12;
+const FPV_POWER_DBM = 30;
+const FPV_ALT_M = 45;
+
+export interface FriendlyFix {
+  name: string;
+  pos: Point;
+  radius: number;
+  ageMs: number;
+}
+
+export interface Clearance {
+  name: string;
+  d: number;
+  raw: number;
+  radius: number;
+  ageMs: number;
+}
+
+export function describeClearance(c: Clearance): string {
+  if (c.radius < 1) return `${c.name} ${Math.round(c.raw)} m`;
+  return `${c.name} ${Math.round(c.d)} m (last report ${Math.round(c.ageMs / 1000)} s old, ±${Math.round(c.radius)} m)`;
+}
 
 export interface Impact {
   timeMs: number;
@@ -79,6 +103,7 @@ export class FiresCell {
 
   constructor(
     private store: OntologyStore,
+    private edge: Edge,
     private targets: TruthTarget[],
     private onKill: (truthId: string, by: string, trackId: string) => void,
   ) {}
@@ -92,29 +117,44 @@ export class FiresCell {
     this.fly(dt);
   }
 
-  friendlies(): { name: string; pos: Point }[] {
+  friendlies(): FriendlyFix[] {
     const store = this.store;
-    const out: { name: string; pos: Point }[] = [];
+    const now = store.clockMs;
+    const coc = this.edge.coc;
+    const out: FriendlyFix[] = [];
     for (const u of store.list("Unit")) {
-      if (u.props.status === "Extracted" || carrierOf(store, u)) continue;
-      out.push({ name: u.props.callsign, pos: u.props.pos });
+      const status = coc.get<string>(keys.status(u.id));
+      if (status === "Extracted" || status === "Embarked") continue;
+      const pos = coc.get<Point>(keys.pos(u.id));
+      const stamp = coc.stamp(keys.pos(u.id));
+      if (!pos || !stamp) continue;
+      const ageMs = now - stamp.t;
+      const radius = ageMs > STALE_MS ? (ageMs / 1000) * UNIT_SPEED : 0;
+      out.push({ name: u.props.callsign, pos, radius, ageMs });
     }
     for (const p of store.list("Platform")) {
-      if (p.props.kind === "Helicopter") out.push({ name: p.props.callsign, pos: p.props.pos });
+      if (p.props.kind === "Helicopter") out.push({ name: p.props.callsign, pos: p.props.pos, radius: 0, ageMs: 0 });
     }
     for (const s of store.list("Sensor")) {
-      if (s.props.kind === "Ground radar") out.push({ name: s.props.name, pos: s.props.pos });
+      if (s.props.kind === "Ground radar") out.push({ name: s.props.name, pos: s.props.pos, radius: 0, ageMs: 0 });
     }
     return out;
   }
 
-  nearestFriendly(p: Point): { name: string; d: number } {
-    let best = { name: "none", d: Infinity };
+  nearestFriendly(p: Point): Clearance {
+    let best: Clearance = { name: "none", d: Infinity, raw: Infinity, radius: 0, ageMs: 0 };
     for (const f of this.friendlies()) {
-      const d = dist(f.pos, p);
-      if (d < best.d) best = { name: f.name, d };
+      const raw = dist(f.pos, p);
+      const d = raw - f.radius;
+      if (d < best.d) best = { name: f.name, d, raw, radius: f.radius, ageMs: f.ageMs };
     }
     return best;
+  }
+
+  controlLinkDb(p: Point): number {
+    const coc = this.edge.radioNodes().find((n) => n.id === COC_ID)!;
+    const drone: RadioNode = { id: "fpv", name: "FPV", pos: p, altM: FPV_ALT_M, powerDbm: FPV_POWER_DBM };
+    return Math.min(sinrDb(coc, drone, this.edge.jammer), sinrDb(drone, coc, this.edge.jammer));
   }
 
   private objArea(): Rect | null {
@@ -202,7 +242,13 @@ export class FiresCell {
       }
       const nf = this.nearestFriendly(p.pos);
       if (nf.d < DECISION_CLEAR_M) {
-        this.withhold(t, "friendly", `${nf.name} ${Math.round(nf.d)} m from target (needs ${DECISION_CLEAR_M} m at launch)`);
+        const kind = nf.radius > 0 ? "uncertain" : "friendly";
+        this.withhold(t, kind, `${describeClearance(nf)} from target (needs ${DECISION_CLEAR_M} m at launch)`);
+        continue;
+      }
+      const link = this.controlLinkDb(p.pos);
+      if (link < RADIO.upDb) {
+        this.withhold(t, "jammed", `control link at the target only ${link.toFixed(0)} dB SINR (jammed)`);
         continue;
       }
       const bystander = this.bystanderNear(t, p.pos);
@@ -216,14 +262,15 @@ export class FiresCell {
     }
   }
 
-  private launch(drone: Drone, t: Track, nf: { name: string; d: number }): void {
+  private launch(drone: Drone, t: Track, nf: Clearance): void {
     const store = this.store;
     const label = `ENG-${String(++this.seq).padStart(2, "0")}`;
     const id = `eng-${this.seq}`;
     const { aim, t: tti } = interceptPoint(drone.props.pos, t.props.pos, t.props.vel, FPV_SPEED);
     const checks = [
       "weapons free",
-      `nearest friendly ${nf.name} ${Math.round(nf.d)} m (min ${MIN_FRIENDLY_M})`,
+      `nearest friendly ${describeClearance(nf)} (min ${MIN_FRIENDLY_M})`,
+      `control link ${this.controlLinkDb(t.props.pos).toFixed(0)} dB`,
       `no neutral or unknown track within ${BYSTANDER_M} m`,
       `track 1σ ${t.props.sigmaMajor.toFixed(1)} m`,
     ].join(" · ");
@@ -295,6 +342,11 @@ export class FiresCell {
         this.close(e, drone, "battery low", "Aborted");
         continue;
       }
+      const link = this.controlLinkDb(drone.props.pos);
+      if (link < RADIO.downDb) {
+        this.close(e, drone, `control link lost (${link.toFixed(0)} dB SINR), lost-link procedure`, "Aborted");
+        continue;
+      }
 
       let track = store.linkedOne<"Track">(e.id, "engagementTarget");
       if (!track) {
@@ -325,11 +377,11 @@ export class FiresCell {
         }
         store.update(e, { status: "In flight" });
         store.update(drone, { status: "Engaging" });
-        store.log("system", `${e.props.label} resumed: nearest friendly ${nf.name} ${Math.round(nf.d)} m`, [e.id], "fires");
+        store.log("system", `${e.props.label} resumed: nearest friendly ${describeClearance(nf)}`, [e.id], "fires");
       } else if (nf.d < HOLD_OFF_M) {
         store.update(e, { status: "Holding off", aimPoint: aim });
         store.update(drone, { status: "Holding off", waypoint: null });
-        store.log("warning", `${e.props.label} holding off: ${nf.name} ${Math.round(nf.d)} m from aim point`, [e.id, drone.id], "fires");
+        store.log("warning", `${e.props.label} holding off: ${describeClearance(nf)} from aim point`, [e.id, drone.id], "fires");
         continue;
       }
 
@@ -360,7 +412,7 @@ export class FiresCell {
       if (final.d < MIN_FRIENDLY_M) {
         store.update(e, { status: "Holding off" });
         store.update(drone, { status: "Holding off", waypoint: null });
-        store.log("warning", `${e.props.label} pulled off at terminal: ${final.name} ${Math.round(final.d)} m`, [e.id], "fires");
+        store.log("warning", `${e.props.label} pulled off at terminal: ${describeClearance(final)}`, [e.id], "fires");
         continue;
       }
       this.impact(e, drone, track, locked, final);
@@ -387,12 +439,12 @@ export class FiresCell {
     return t;
   }
 
-  private impact(e: Engagement, drone: Drone, track: Track, target: TruthTarget, nf: { name: string; d: number }): void {
+  private impact(e: Engagement, drone: Drone, track: Track, target: TruthTarget, nf: Clearance): void {
     const store = this.store;
     const pos = { ...target.pos };
     target.active = false;
     target.vel = { x: 0, y: 0 };
-    const outcome = `Hit at ${toGrid(pos)}; nearest friendly ${nf.name} ${Math.round(nf.d)} m`;
+    const outcome = `Hit at ${toGrid(pos)}; nearest friendly ${describeClearance(nf)}`;
     this.close(e, drone, outcome, "Hit");
     store.update(e, { aimPoint: pos });
     store.update(drone, { status: "Expended", altitudeFt: 0, waypoint: null, pos });
@@ -404,7 +456,7 @@ export class FiresCell {
       nearestFriendly: nf.name,
       nearestFriendlyM: nf.d,
     });
-    store.log("warning", `${e.props.label} HIT ${track.props.label} at ${toGrid(pos)} (nearest friendly ${nf.name} ${Math.round(nf.d)} m)`, [e.id, drone.id], "fires");
+    store.log("warning", `${e.props.label} HIT ${track.props.label} at ${toGrid(pos)} (nearest friendly ${describeClearance(nf)})`, [e.id, drone.id], "fires");
     this.onKill(target.id, e.props.label, track.id);
   }
 

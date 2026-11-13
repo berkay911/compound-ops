@@ -5,6 +5,24 @@ import { OBJECT_TYPES, titleOf, type OntObject } from "../ontology/schema";
 import { actionsFor, type ActionDef, type ActionParams } from "../ontology/actions";
 import type { ResolvedLink } from "../ontology/store";
 import { formatClock, formatValue, toneOf } from "./format";
+import { ageText, delaySec, nodeName, structureStatus, unitPicture, visibleEvents } from "./view";
+import type { World } from "./world";
+
+function pictureProps(world: World, obj: OntObject): Record<string, unknown> {
+  const props = { ...(obj.props as unknown as Record<string, unknown>) };
+  if (obj.type === "Unit") {
+    const pic = unitPicture(world, obj as OntObject<"Unit">);
+    props.status = pic.status;
+    props.pos = pic.pos;
+    if (pic.stale) props.waypoint = null;
+  }
+  if (obj.type === "Structure") {
+    const r = structureStatus(world, obj as OntObject<"Structure">);
+    props.status = r.status;
+    props.clearedBy = r.by;
+  }
+  return props;
+}
 
 const ACTIVITY_ROWS = 10;
 
@@ -18,7 +36,7 @@ function identityOf(obj: OntObject): { label: string; cls: string } | null {
 }
 
 export function DetailPanel() {
-  const { store, selectedId } = useOps();
+  const { store, world, selectedId } = useOps();
   const obj = selectedId ? store.get(selectedId) : undefined;
 
   if (!obj) {
@@ -31,7 +49,7 @@ export function DetailPanel() {
   }
 
   const def = OBJECT_TYPES[obj.type];
-  const props = obj.props as unknown as Record<string, unknown>;
+  const props = pictureProps(world, obj);
   const identity = identityOf(obj);
 
   return (
@@ -61,10 +79,36 @@ export function DetailPanel() {
         })}
       </dl>
 
+      {obj.type === "Unit" && <CommsSection unit={obj as OntObject<"Unit">} />}
       <LinksSection obj={obj} />
       <ActionsSection obj={obj} />
       <ActivitySection obj={obj} />
     </div>
+  );
+}
+
+function CommsSection({ unit }: { unit: OntObject<"Unit"> }) {
+  const { world } = useOps();
+  const pic = unitPicture(world, unit);
+  const rows: [string, string, string?][] = [
+    ["Contact", pic.contact ? "Yes" : "No contact", pic.contact ? "" : "tone-alert"],
+    ["Route to COC", pic.route ? pic.route.map((id) => nodeName(world, id)).join(" → ") : "none"],
+    ["Direct SINR", pic.sinrDb === null ? "—" : `${pic.sinrDb.toFixed(1)} dB`],
+    ["Last report", `${ageText(pic.ageMs)} ago`, pic.stale ? "tone-alert" : ""],
+    ["Fires uncertainty", pic.uncertaintyM > 0 ? `±${Math.round(pic.uncertaintyM)} m` : "none"],
+  ];
+  return (
+    <>
+      <div className="section-title">Comms</div>
+      <dl className="kv">
+        {rows.map(([k, v, cls]) => (
+          <div key={k} className="kv-row">
+            <dt>{k}</dt>
+            <dd className={cls || "mono"}>{v}</dd>
+          </div>
+        ))}
+      </dl>
+    </>
   );
 }
 
@@ -158,7 +202,10 @@ function ActionRunner({ action, target }: { action: ActionDef; target: OntObject
 
 function ActivitySection({ obj }: { obj: OntObject }) {
   const { store } = useOps();
-  const rows = store.events.filter((e) => e.refs.includes(obj.id)).slice(-ACTIVITY_ROWS).reverse();
+  const rows = visibleEvents(store.events)
+    .filter((e) => e.refs.includes(obj.id))
+    .slice(-ACTIVITY_ROWS)
+    .reverse();
   if (rows.length === 0) return null;
   return (
     <>
@@ -167,7 +214,10 @@ function ActivitySection({ obj }: { obj: OntObject }) {
         {rows.map((e) => (
           <div key={e.seq} className={`act-row ${e.kind === "warning" ? "warn" : ""}`}>
             <span className="mono dim">{formatClock(e.timeMs)}</span>
-            <span>{e.text}</span>
+            <span>
+              {delaySec(e) >= 2 && <span className="delay">+{delaySec(e)}s</span>}
+              {e.text}
+            </span>
           </div>
         ))}
       </div>

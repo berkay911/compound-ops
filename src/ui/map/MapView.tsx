@@ -6,6 +6,8 @@ import { region } from "../../ontology/queries";
 import type { OntObject, Point } from "../../ontology/schema";
 import { CHI2_95_SCALE } from "../../sim/kalman";
 import { EO, RADAR } from "../../sim/sensors";
+import { COC_ID } from "../../sim/comms";
+import { ageText, structureStatus, unitPicture } from "../view";
 import { DOMAIN, ROAD, WADI, buildContours, heightAt, hillshadeDataUrl, peak } from "./terrain";
 import {
   AFFILIATION_COLOR,
@@ -20,13 +22,14 @@ import {
 const MAP_W = 1000;
 const MAP_H = 700;
 
-type LayerKey = "terrain" | "grid" | "graphics" | "coverage" | "plots" | "tracks" | "ellipses" | "truth";
+type LayerKey = "terrain" | "grid" | "graphics" | "coverage" | "comms" | "plots" | "tracks" | "ellipses" | "truth";
 
 const LAYERS: { key: LayerKey; label: string }[] = [
   { key: "terrain", label: "Terrain and contours" },
   { key: "grid", label: "100 m grid" },
   { key: "graphics", label: "Control measures" },
   { key: "coverage", label: "Sensor coverage" },
+  { key: "comms", label: "Comms routes to COC" },
   { key: "plots", label: "Raw plots" },
   { key: "tracks", label: "Tracks" },
   { key: "ellipses", label: "95% error ellipses" },
@@ -38,6 +41,7 @@ const DEFAULT_LAYERS: Record<LayerKey, boolean> = {
   grid: true,
   graphics: true,
   coverage: false,
+  comms: true,
   plots: false,
   tracks: true,
   ellipses: true,
@@ -243,7 +247,22 @@ export function MapView() {
   const tracks = store.list("Track");
   const radar = store.get(RADAR.id) as OntObject<"Sensor"> | undefined;
   const uav = platforms.find((p) => p.props.kind === "UAV");
-  const gatesInUse = new Set(units.map((u) => u.props.entryGate).filter(Boolean));
+  const pictures = new Map(units.map((u) => [u.id, unitPicture(world, u)]));
+  const gatesInUse = new Set(units.filter((u) => !pictures.get(u.id)!.stale).map((u) => u.props.entryGate).filter(Boolean));
+  const edge = world.sim.edge;
+  const nodePos = new Map(edge.net.nodes.map((n) => [n.id, pictures.get(n.id)?.pos ?? n.pos]));
+  const commsSegments = new Map<string, [Point, Point]>();
+  if (layers.comms) {
+    for (const n of edge.net.nodes) {
+      if (n.id === COC_ID) continue;
+      const route = edge.net.route(n.id, COC_ID);
+      if (!route) continue;
+      for (let i = 1; i < route.length; i++) {
+        const key = [route[i - 1], route[i]].sort().join("|");
+        commsSegments.set(key, [nodePos.get(route[i - 1])!, nodePos.get(route[i])!]);
+      }
+    }
+  }
   const c = RADAR.pos;
 
   const gridLabelsX: number[] = [];
@@ -354,7 +373,8 @@ export function MapView() {
         )}
 
         {structures.map((s) => {
-          const { rect, status, name } = s.props;
+          const { rect, name } = s.props;
+          const status = structureStatus(world, s).status;
           return (
             <g key={s.id} onClick={pick(s.id)} className="clickable">
               <rect
@@ -390,8 +410,25 @@ export function MapView() {
           />
         ))}
 
+        {[...commsSegments.entries()].map(([key, [a, b]]) => (
+          <line key={`net-${key}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} className="net-link" vectorEffect="non-scaling-stroke" />
+        ))}
+        {units.map((u) => {
+          const pic = pictures.get(u.id)!;
+          if (!pic.stale || pic.uncertaintyM < 4) return null;
+          return (
+            <circle
+              key={`unc-${u.id}`}
+              cx={pic.pos.x}
+              cy={pic.pos.y}
+              r={pic.uncertaintyM}
+              className="uncertainty"
+              vectorEffect="non-scaling-stroke"
+            />
+          );
+        })}
         {units.map((u) =>
-          u.props.route.length > 0 ? (
+          u.props.route.length > 0 && !pictures.get(u.id)!.stale ? (
             <polyline
               key={`route-${u.id}`}
               points={pts([u.props.pos, ...u.props.route])}
@@ -488,6 +525,23 @@ export function MapView() {
           })}
 
         {layers.truth &&
+          units.map((u) => (
+            <g key={`truthu-${u.id}`} transform={`translate(${u.props.pos.x} ${u.props.pos.y}) scale(${k})`} className="truth friend">
+              <path d="M-4 -4L4 4M4 -4L-4 4" />
+              <text x={6} y={-5}>
+                {u.props.callsign.toLowerCase()}
+              </text>
+            </g>
+          ))}
+        {layers.truth && edge.jammer.active && (
+          <g transform={`translate(${edge.jammer.pos.x} ${edge.jammer.pos.y}) scale(${k})`} className="truth">
+            <circle r={6} className="jammer" />
+            <text x={9} y={-6}>
+              jammer
+            </text>
+          </g>
+        )}
+        {layers.truth &&
           world.sim.targets
             .filter((g) => g.active)
             .map((g) => (
@@ -528,19 +582,26 @@ export function MapView() {
             );
           })}
 
-        {units.map((u) => (
-          <GroundUnitSymbol
-            key={u.id}
-            x={u.props.pos.x}
-            y={u.props.pos.y}
-            k={k}
-            icon={u.props.role === "Assault" ? "infantry" : "recon"}
-            echelon={u.props.role === "Assault" ? "squad" : "team"}
-            lines={[u.props.callsign, detail || sel(u.id) ? u.props.status.toUpperCase() : null]}
-            selected={sel(u.id)}
-            onPick={pick(u.id)}
-          />
-        ))}
+        {units.map((u) => {
+          const pic = pictures.get(u.id)!;
+          return (
+            <GroundUnitSymbol
+              key={u.id}
+              x={pic.pos.x}
+              y={pic.pos.y}
+              k={k}
+              icon={u.props.role === "Assault" ? "infantry" : "recon"}
+              echelon={u.props.role === "Assault" ? "squad" : "team"}
+              stale={pic.stale}
+              lines={[
+                u.props.callsign,
+                pic.stale ? `NO CONTACT ${ageText(pic.ageMs)}` : detail || sel(u.id) ? pic.status.toUpperCase() : null,
+              ]}
+              selected={sel(u.id)}
+              onPick={pick(u.id)}
+            />
+          );
+        })}
 
         {platforms.map((p) => (
           <AirSymbol

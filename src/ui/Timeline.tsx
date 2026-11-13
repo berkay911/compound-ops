@@ -3,6 +3,7 @@ import { useOps } from "./world";
 import { formatClock } from "./format";
 import { phases } from "../ontology/queries";
 import type { Lane } from "../ontology/store";
+import { delaySec, visibleEvents } from "./view";
 
 const LABEL_W = 78;
 const AXIS_H = 18;
@@ -15,6 +16,7 @@ const LANES: { lane: Lane; label: string }[] = [
   { lane: "clearing", label: "CLEARING" },
   { lane: "sensors", label: "SENSORS" },
   { lane: "fires", label: "FIRES" },
+  { lane: "comms", label: "COMMS" },
 ];
 
 export function Timeline() {
@@ -85,7 +87,7 @@ export function Timeline() {
             </text>
           </g>
         ))}
-        {store.events.map((e) => {
+        {visibleEvents(store.events).map((e) => {
           const i = LANES.findIndex((l) => l.lane === e.lane);
           if (i < 0) return null;
           const hit = selectedId !== null && e.refs.includes(selectedId);
@@ -93,7 +95,10 @@ export function Timeline() {
           const y0 = laneY(i);
           return (
             <g key={e.seq} className={e.refs.length ? "clickable" : ""} onClick={() => e.refs[0] && select(e.refs[0])}>
-              <title>{`${formatClock(e.timeMs)}  ${e.text}`}</title>
+              <title>{`${formatClock(e.timeMs)}${delaySec(e) >= 2 ? ` (received +${delaySec(e)} s)` : ""}  ${e.text}`}</title>
+              {delaySec(e) >= 2 && (
+                <line x1={cx} x2={x(e.receivedMs!)} y1={y0 + LANE_H / 2} y2={y0 + LANE_H / 2} className="tl-latency" />
+              )}
               <rect x={cx - 3} y={y0} width={6} height={LANE_H - 1} fill="transparent" />
               {e.lane === "operator" ? (
                 <path d={`M${cx} ${y0 + 3}L${cx + 4} ${y0 + LANE_H - 3}H${cx - 4}Z`} className={`tl-op ${hit ? "hit" : ""}`} />

@@ -3,6 +3,7 @@ import { EO, RADAR } from "./sensors";
 
 export const MAP = { width: 1000, height: 700 } as const;
 export const FPV_LAUNCH = { x: 76, y: 628 };
+export const UNIT_SPEED = 11;
 const FPV_COUNT = 6;
 
 export function loadScenario(store: OntologyStore): void {

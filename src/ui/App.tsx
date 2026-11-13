@@ -82,6 +82,27 @@ export function App() {
   );
 }
 
+function NetStatus() {
+  const { store, world, select } = useOps();
+  const now = store.clockMs;
+  const cut = store
+    .list("Unit")
+    .filter((u) => u.props.status !== "Extracted" && !world.sim.edge.net.connected(u.id, "coc"))
+    .map((u) => ({ id: u.id, name: u.props.callsign, s: Math.round((now - (world.sim.edge.lastContact.get(u.id) ?? now)) / 1000) }));
+  if (cut.length === 0) {
+    return (
+      <button className="net" onClick={() => select(null)}>
+        NET <span className="dim">all up</span>
+      </button>
+    );
+  }
+  return (
+    <button className="net down" onClick={() => select(cut[0].id)}>
+      NO CONTACT <span className="dim">{cut.map((c) => c.name).join(" ")} {Math.max(...cut.map((c) => c.s))}s</span>
+    </button>
+  );
+}
+
 const weaponsHold = ACTIONS.find((a) => a.id === "weaponsHold")!;
 const weaponsFree = ACTIONS.find((a) => a.id === "weaponsFree")!;
 
@@ -121,13 +142,10 @@ function TopBar({ running, setRunning, speed, setSpeed, reset }: TopBarProps) {
   return (
     <header className="topbar">
       <span className="brand">COMPOUND OPS</span>
-      <span className="sep" />
-      <span className="crumb">{r.props.name}</span>
-      <span className="crumb dim">/</span>
-      <span className="crumb">OBJ FALCON</span>
       <span className="mission">{r.props.missionStatus}</span>
       <PhaseBar />
       <WeaponsSwitch />
+      <NetStatus />
       <span className="spacer" />
       <span className="clock">{formatClock(store.clockMs)}</span>
       <span className="sep" />

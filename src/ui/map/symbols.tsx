@@ -54,16 +54,25 @@ function Labels({ lines, x = 24, y = -2 }: { lines: (string | null)[]; x?: numbe
 }
 
 export function GroundUnitSymbol(
-  props: SymbolProps & { icon: "infantry" | "recon"; echelon: "team" | "squad"; lines: (string | null)[] },
+  props: SymbolProps & {
+    icon: "infantry" | "recon";
+    echelon: "team" | "squad";
+    lines: (string | null)[];
+    stale?: boolean;
+  },
 ) {
-  const { icon, echelon, lines } = props;
+  const { icon, echelon, lines, stale } = props;
   return (
     <Frame {...props}>
-      <rect x={-16} y={-11} width={32} height={22} fill={IDENTITY.friend} stroke={INK} strokeWidth={1.4} />
-      {icon === "infantry" ? (
-        <path d="M-16 -11L16 11M16 -11L-16 11" stroke={INK} strokeWidth={1.3} />
+      {stale ? (
+        <rect x={-16} y={-11} width={32} height={22} fill="#1a2433" stroke={IDENTITY.friend} strokeWidth={1.6} strokeDasharray="4 3" />
       ) : (
-        <path d="M-16 11L16 -11" stroke={INK} strokeWidth={1.3} />
+        <rect x={-16} y={-11} width={32} height={22} fill={IDENTITY.friend} stroke={INK} strokeWidth={1.4} />
+      )}
+      {icon === "infantry" ? (
+        <path d="M-16 -11L16 11M16 -11L-16 11" stroke={stale ? IDENTITY.friend : INK} strokeWidth={1.3} />
+      ) : (
+        <path d="M-16 11L16 -11" stroke={stale ? IDENTITY.friend : INK} strokeWidth={1.3} />
       )}
       {echelon === "squad" ? (
         <circle cx={0} cy={-15.5} r={2} className="echelon" />

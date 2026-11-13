@@ -2,7 +2,7 @@
 
 A fictional special-operations raid console built around a small Palantir-style **ontology** and a real **multi-sensor tracker**. UI built with [Blueprint](https://blueprintjs.com), map symbology in the style of MIL-STD-2525.
 
-![Assault phase](docs/assault.jpg)
+![Demo](docs/demo.gif)
 
 ## Sensor fusion
 
@@ -17,9 +17,7 @@ A fictional special-operations raid console built around a small Palantir-style 
 - **Links:** track → supporting detections → sensor, track → structure it sits on, helicopter → carried units, unit → objective
 - **Actions:** start phase, classify track, assign objective, confirm cleared, mark LZ risky, abort
 
-A hostile vehicle closing on the primary LZ raises an alert. Marking the LZ risky re-links both helicopters to the alternate, and the assault teams then pick the gate nearest to their new landing site:
-
-![LZ divert](docs/divert.jpg)
+A hostile vehicle closing on the primary LZ raises an alert. Marking the LZ risky re-links both helicopters to the alternate, and the assault teams then pick the gate nearest to their new landing site.
 
 ## Run
 
@@ -28,5 +26,7 @@ npm install
 npm run dev
 npm run smoke
 ```
+
+The demo GIF is rendered frame by frame from `?capture` mode with `node scripts/record-demo.mjs frames` (needs Chrome and the dev server on port 5317), then encoded with ffmpeg.
 
 All names, places and coordinates are invented.

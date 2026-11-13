@@ -17,14 +17,16 @@ import { EventFeed } from "./EventFeed";
 import { PhaseBar } from "./PhaseBar";
 import { formatClock, statusIntent } from "./format";
 import { region } from "../ontology/queries";
+import { ACTIONS, type ActionParams } from "../ontology/actions";
 
 const TICK_MS = 100;
 const SPEEDS = [1, 2, 4, 8];
+const CAPTURE = new URLSearchParams(window.location.search).has("capture");
 
 export function App() {
   const [world, setWorld] = useState<World>(() => createWorld());
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useState(!CAPTURE);
   const [speed, setSpeed] = useState(1);
 
   useEffect(() => {
@@ -32,6 +34,28 @@ export function App() {
     const timer = setInterval(() => world.sim.tick(TICK_MS * speed), TICK_MS);
     return () => clearInterval(timer);
   }, [world, running, speed]);
+
+  useEffect(() => {
+    if (!CAPTURE) return;
+    Object.assign(window, {
+      __ops: {
+        store: world.store,
+        sim: world.sim,
+        step: (ms: number) => world.sim.tick(ms),
+        select: (id: string | null) => setSelectedId(id),
+        act: (id: string, target: string, params: ActionParams = {}) => {
+          const action = ACTIONS.find((a) => a.id === id);
+          const obj = world.store.get(target);
+          if (!action || !obj) return `missing ${id} or ${target}`;
+          const reason = action.check(world.store, obj, params);
+          if (reason === null) action.apply(world.store, obj, params);
+          return reason;
+        },
+        view: (cx: number, cy: number, zoom: number) =>
+          window.dispatchEvent(new CustomEvent("ops:view", { detail: { cx, cy, zoom } })),
+      },
+    });
+  }, [world]);
 
   const ctx = useMemo(() => ({ world, selectedId, select: setSelectedId }), [world, selectedId]);
 

@@ -165,6 +165,9 @@ export class OntologyStore {
     if (kind === "action") return "operator";
     const objs = refs.map((id) => this.objects.get(id)).filter((o): o is OntObject => !!o);
     const has = (t: ObjectTypeId) => objs.some((o) => o.type === t);
+    if (has("Engagement") || objs.some((o) => o.type === "Platform" && (o as OntObject<"Platform">).props.kind === "FPV")) {
+      return "fires";
+    }
     if (has("Track")) return "sensors";
     if (has("Structure") || has("Compound")) return "clearing";
     if (has("Unit") || has("Platform") || has("LandingZone")) return "maneuver";

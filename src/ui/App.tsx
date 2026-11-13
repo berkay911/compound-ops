@@ -82,6 +82,31 @@ export function App() {
   );
 }
 
+const weaponsHold = ACTIONS.find((a) => a.id === "weaponsHold")!;
+const weaponsFree = ACTIONS.find((a) => a.id === "weaponsFree")!;
+
+function WeaponsSwitch() {
+  const { store, select } = useOps();
+  const r = region(store);
+  const hold = r.props.weapons === "Hold";
+  const active = store.list("Engagement").filter((e) => e.props.status === "In flight" || e.props.status === "Holding off").length;
+  return (
+    <div className={`weapons ${hold ? "hold" : ""}`}>
+      <button className="weapons-state" onClick={() => select(r.id)}>
+        WEAPONS {hold ? "HOLD" : "FREE"}
+        <span className="weapons-sub">{active} in flight</span>
+      </button>
+      <button
+        className="weapons-toggle"
+        onClick={() => (hold ? weaponsFree : weaponsHold).apply(store, r, {})}
+        title={hold ? "Resume autonomous engagement" : "Stop all engagements and recall drones in flight"}
+      >
+        {hold ? "Release" : "Hold"}
+      </button>
+    </div>
+  );
+}
+
 interface TopBarProps {
   running: boolean;
   setRunning: (v: boolean) => void;
@@ -102,6 +127,7 @@ function TopBar({ running, setRunning, speed, setSpeed, reset }: TopBarProps) {
       <span className="crumb">OBJ FALCON</span>
       <span className="mission">{r.props.missionStatus}</span>
       <PhaseBar />
+      <WeaponsSwitch />
       <span className="spacer" />
       <span className="clock">{formatClock(store.clockMs)}</span>
       <span className="sep" />

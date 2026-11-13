@@ -88,61 +88,51 @@ async function run(version) {
     fs.writeFileSync(file, Buffer.from(data, "base64"));
   };
   const step = (ms) => ev(`__ops.step(${ms})`);
+  const phaseDone = (id) => ev(`__ops.store.get("${id}").props.status === "Complete"`);
+  const engagement = (label) => ev(`(__ops.store.list("Engagement").find((e) => e.props.label === "${label}") || { id: null }).id`);
 
-  await ev(`window.__auto = (confirmDelayMs) => {
-    const o = __ops, st = o.store;
-    for (const p of st.list("Phase").sort((a, b) => a.props.order - b.props.order)) {
-      if (p.props.status === "Pending" && o.act("startPhase", p.id) === null) break;
-    }
-    for (const x of st.list("Structure")) {
-      if (x.props.status !== "Clear reported") continue;
-      x.__reportedAt ??= st.clockMs;
-      if (st.clockMs - x.__reportedAt >= confirmDelayMs) o.act("markCleared", x.id);
-    }
-    for (const u of st.list("Unit")) {
-      if (u.props.role !== "Assault" || st.linkedOne(u.id, "unitObjective")) continue;
-      const next = st.list("Structure").find((x) => x.props.status === "Uncleared" && st.linked(x.id, "unitObjective", "reverse").length === 0);
-      if (next) o.act("assignObjective", u.id, { structure: next.id });
-    }
-  }`);
-
-  for (let i = 0; i < 6; i++) await shot();
+  for (let i = 0; i < 8; i++) await shot();
   await ev(`__ops.act("startPhase", "phase-1")`);
-  let alertFrame = -1;
-  let trackId = null;
-  for (let f = 0; f < 500; f++) {
-    await step(150);
-    await shot();
-    if (alertFrame < 0) {
-      trackId = await ev(`(__ops.store.events.find((e) => e.kind === "warning" && e.text.includes("from HLZ RAVEN")) || { refs: [null] }).refs[0]`);
-      if (trackId) alertFrame = f;
-      continue;
+  let picked = null;
+  for (let f = 0; f < 170; f++) {
+    await step(180);
+    if (!picked) {
+      const tech = await ev(
+        `(__ops.store.list("Engagement").find((e) => e.props.rationale.includes("closing on")) || { id: null }).id`,
+      );
+      const first = tech ?? (await engagement("ENG-01"));
+      if (first && first !== picked) {
+        await ev(`__ops.select(${JSON.stringify(first)})`);
+        if (tech) picked = tech;
+      }
     }
-    const k = f - alertFrame;
-    if (k === 5) await ev(`__ops.select(${JSON.stringify(trackId)})`);
-    if (k === 15) await ev(`__ops.act("classifyHostile", ${JSON.stringify(trackId)})`);
-    if (k === 24) await ev(`__ops.select("hlz-raven")`);
-    if (k === 32) await ev(`__ops.act("markLzRisky", "hlz-raven")`);
-    if (k === 95) break;
+    await shot();
+    const hits = await ev(`__ops.store.list("Engagement").filter((e) => e.props.status === "Hit").length`);
+    if (hits >= 5 && f > 130) break;
   }
-  console.log("scene 1 frames", n, "alert at frame", alertFrame);
+  for (let i = 0; i < 12; i++) await shot();
+  console.log("scene 1 frames", n);
+
+  await ev(`__ops.select((__ops.store.list("Track").find((t) => t.props.affiliation === "Neutral") || { id: null }).id)`);
+  for (let i = 0; i < 18; i++) {
+    await step(180);
+    await shot();
+  }
 
   await ev(`__ops.select(null)`);
-  for (let i = 0; i < 2000; i++) {
-    await step(200);
-    await ev("__auto(1500)");
-    if (await ev(`__ops.store.get("phase-3").props.status === "Active"`)) break;
-  }
-  await ev(`__ops.view(640, 330, 2.3)`);
-  await ev(`__ops.select("alpha")`);
-  for (let f = 0; f < 120; f++) {
-    await step(200);
-    await ev("__auto(1500)");
-    if (f === 60) {
-      await ev(`__ops.select((__ops.store.list("Track").find((t) => t.props.status === "Confirmed" && __ops.store.linkedOne(t.id, "trackStructure")) || { id: null }).id)`);
-    }
+  for (let i = 0; i < 2000 && !(await phaseDone("phase-1")); i++) await step(200);
+  await ev(`__ops.act("startPhase", "phase-2")`);
+  for (let i = 0; i < 2000 && !(await phaseDone("phase-2")); i++) await step(200);
+  await ev(`__ops.view(640, 345, 2.5)`);
+  await ev(`__ops.select("bravo")`);
+  for (let i = 0; i < 6; i++) await shot();
+  await ev(`__ops.act("startPhase", "phase-3")`);
+  for (let f = 0; f < 220; f++) {
+    await step(300);
     await shot();
+    if (await phaseDone("phase-3")) break;
   }
+  for (let i = 0; i < 16; i++) await shot();
   console.log("total frames", n, "sim clock", await ev("__ops.store.clockMs"));
 
   ws.close();

@@ -197,6 +197,17 @@ export class Tracker {
     return this.tracks.length;
   }
 
+  truthOf(trackId: string): string | null {
+    return this.tracks.find((t) => t.id === trackId)?.truthId ?? null;
+  }
+
+  neutralize(trackId: string, reason: string): void {
+    const t = this.tracks.find((x) => x.id === trackId);
+    if (!t) return;
+    this.store.log("sim", `${t.label} dropped: ${reason}`, [], "sensors");
+    this.drop(t, false);
+  }
+
   private matchesFriendly(d: RawDetection, f: Point): boolean {
     const bft = BFT_SIGMA_M ** 2;
     const a = d.R[0][0] + bft;
@@ -226,7 +237,11 @@ export class Tracker {
         const keepObj = this.store.get(keep.id) as OntObject<"Track"> | undefined;
         const loseObj = this.store.get(lose.id) as OntObject<"Track"> | undefined;
         if (keepObj && loseObj && keepObj.props.affiliation === "Unknown" && loseObj.props.affiliation !== "Unknown") {
-          this.store.update(keepObj, { affiliation: loseObj.props.affiliation });
+          this.store.update(keepObj, {
+            affiliation: loseObj.props.affiliation,
+            classifiedBy: loseObj.props.classifiedBy,
+            assessment: loseObj.props.assessment,
+          });
         }
         this.store.log("sim", `${lose.label} merged into ${keep.label}`, [keep.id]);
         this.drop(lose, false);
@@ -293,6 +308,8 @@ export class Tracker {
       initiatedMs: d.timeMs,
       lastUpdateMs: d.timeMs,
       history: [],
+      classifiedBy: null,
+      assessment: "",
     });
     this.addDetection(t, d);
   }

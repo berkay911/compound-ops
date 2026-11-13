@@ -61,13 +61,6 @@ const startPhase = defineAction({
     store.update(phase, { status: "Active", startedAt: store.clockMs });
     store.update(region(store), { missionStatus: "In progress" });
     store.log("action", `${phase.props.name} started`, [phase.id]);
-    if (phase.props.order === PHASE.APPROACH || phase.props.order === PHASE.ASSAULT) {
-      for (const unit of store.list("Unit")) {
-        if (unit.props.role === "Assault" && !objectiveOf(store, unit)) {
-          store.log("warning", `${unit.props.callsign} has no objective assigned`, [unit.id]);
-        }
-      }
-    }
   },
 });
 
@@ -92,82 +85,37 @@ const abortMission = defineAction({
     for (const s of store.list("Structure")) {
       if (s.props.status === "Clearing") store.update(s, { status: "Uncleared", clearingSince: null });
     }
+    for (const u of store.list("Unit")) {
+      if (objectiveOf(store, u)) store.unlink("unitObjective", u.id);
+    }
     const exfil = phaseByOrder(store, PHASE.EXFIL);
     if (exfil) store.update(exfil, { status: "Active", startedAt: store.clockMs });
     store.log("warning", "ABORT called. All elements exfil to assigned LZs.", [r.id]);
   },
 });
 
-const assignObjective = defineAction({
-  id: "assignObjective",
-  label: "Assign objective",
-  icon: "flag",
-  intent: "primary",
-  appliesTo: "Unit",
-  params: [
-    {
-      key: "structure",
-      label: "Structure",
-      objectType: "Structure",
-      filter: (_store, s) => (s as OntObject<"Structure">).props.status !== "Cleared",
+const setWeapons = (weapons: "Free" | "Hold") =>
+  defineAction({
+    id: weapons === "Hold" ? "weaponsHold" : "weaponsFree",
+    label: weapons === "Hold" ? "Weapons hold" : "Weapons free",
+    icon: weapons === "Hold" ? "hand" : "locate",
+    intent: weapons === "Hold" ? "warning" : "none",
+    appliesTo: "Region",
+    check(_store, r) {
+      return r.props.weapons === weapons ? `Weapons already ${weapons.toLowerCase()}` : null;
     },
-  ],
-  check(store, unit, params) {
-    if (missionOver(store)) return "Mission is over";
-    if (unit.props.role !== "Assault") return "Only assault units take objectives";
-    if (unit.props.status === "Extracted") return "Unit is extracted";
-    const exfil = phaseByOrder(store, PHASE.EXFIL);
-    if (exfil && exfil.props.status !== "Pending") return "Exfil under way";
-    if (!params.structure) return "Pick a structure";
-    if (objectiveOf(store, unit)?.id === params.structure) return "Already assigned";
-    return null;
-  },
-  apply(store, unit, params) {
-    const target = store.getAs("Structure", params.structure!);
-    const previous = objectiveOf(store, unit);
-    store.unlink("unitObjective", unit.id);
-    store.link("unitObjective", unit.id, target.id);
-    store.update(unit, { entryGate: null });
-    if (previous && previous.props.status === "Clearing") {
-      const stillAssigned = store.linked<"Unit">(previous.id, "unitObjective", "reverse").length > 0;
-      if (!stillAssigned) store.update(previous, { status: "Uncleared", clearingSince: null });
-    }
-    if (unit.props.status === "Assaulting" || unit.props.status === "Holding" || unit.props.status === "In position") {
-      store.update(unit, { status: "Moving" });
-    }
-    store.log("action", `${unit.props.callsign} assigned to ${target.props.name}`, [unit.id, target.id]);
-  },
-});
-
-const markCleared = defineAction({
-  id: "markCleared",
-  label: "Confirm cleared",
-  icon: "tick-circle",
-  intent: "success",
-  appliesTo: "Structure",
-  check(_store, s) {
-    if (s.props.status !== "Clear reported") return "No clear report from the assault team";
-    return null;
-  },
-  apply(store, s) {
-    store.update(s, { status: "Cleared" });
-    for (const unit of store.linked<"Unit">(s.id, "unitObjective", "reverse")) {
-      store.unlink("unitObjective", unit.id, s.id);
-      store.update(unit, { status: "Holding" });
-    }
-    store.log("action", `${s.props.name} confirmed cleared`, [s.id]);
-
-    const compound = store.linkedOne<"Compound">(s.id, "compoundStructure", "reverse");
-    if (!compound) return;
-    const structures = store.linked<"Structure">(compound.id, "compoundStructure");
-    if (structures.every((x) => x.props.status === "Cleared")) {
-      store.update(compound, { status: "Secured" });
-      const assault = phaseByOrder(store, PHASE.ASSAULT);
-      if (assault?.props.status === "Active") store.update(assault, { status: "Complete", endedAt: store.clockMs });
-      store.log("system", `${compound.props.name} secured. Ready for Exfil.`, [compound.id]);
-    }
-  },
-});
+    apply(store, r) {
+      store.update(r, { weapons });
+      store.log(
+        "action",
+        weapons === "Hold"
+          ? "WEAPONS HOLD. No new engagements; drones in flight break off."
+          : "WEAPONS FREE. Autonomous engagement of hostile tracks resumed.",
+        [r.id],
+        "fires",
+      );
+    },
+  });
 
 const markLzRisky = defineAction({
   id: "markLzRisky",
@@ -228,7 +176,7 @@ const classifyTrack = (affiliation: "Hostile" | "Neutral") =>
       return null;
     },
     apply(store, t) {
-      store.update(t, { affiliation });
+      store.update(t, { affiliation, classifiedBy: "Operator", assessment: "Operator classification" });
       store.log("action", `${t.props.label} classified ${affiliation.toUpperCase()}`, [t.id]);
       if (affiliation !== "Hostile") return;
       for (const s of store.linked<"Structure">(t.id, "trackStructure")) {
@@ -249,8 +197,8 @@ const classifyTrack = (affiliation: "Hostile" | "Neutral") =>
 export const ACTIONS: ActionDef[] = [
   startPhase,
   abortMission,
-  assignObjective,
-  markCleared,
+  setWeapons("Hold"),
+  setWeapons("Free"),
   markLzRisky,
   markLzSuitable,
   classifyTrack("Hostile"),

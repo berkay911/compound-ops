@@ -1045,3 +1045,80 @@ body,
   justify-content: space-between;
   margin-top: 2px;
 }
+
+.weapons {
+  display: flex;
+  align-items: stretch;
+  height: 24px;
+  margin-left: 12px;
+  border: 1px solid var(--line-2);
+  font: 11px var(--mono);
+}
+
+.weapons button {
+  background: none;
+  border: 0;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.weapons-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  letter-spacing: 0.08em;
+  font-weight: 700 !important;
+}
+
+.weapons-sub {
+  color: var(--muted);
+  font-weight: 400;
+  letter-spacing: 0.02em;
+}
+
+.weapons-toggle {
+  border-left: 1px solid var(--line-2) !important;
+  padding: 0 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.weapons-toggle:hover {
+  background: #22272b !important;
+}
+
+.weapons.hold {
+  border-color: #e8eaec;
+}
+
+.weapons.hold .weapons-state {
+  background: #e8eaec;
+  color: #0d0f11;
+}
+
+.weapons.hold .weapons-sub {
+  color: #3a4146;
+}
+
+.route.fpv {
+  stroke-dasharray: 2 3;
+  opacity: 0.75;
+}
+
+.aim {
+  fill: none;
+  stroke: var(--friend);
+  stroke-width: 1px;
+}
+
+.impact {
+  stroke: #9aa1a8;
+  stroke-width: 1.6;
+}
+
+.impact.selected {
+  stroke: #fff;
+  stroke-width: 2.2;
+}

@@ -233,7 +233,12 @@ export function MapView() {
   const compound = store.list("Compound")[0];
   const structures = store.list("Structure");
   const lzs = store.list("LandingZone");
-  const platforms = store.list("Platform");
+  const allPlatforms = store.list("Platform");
+  const platforms = allPlatforms.filter((p) => p.props.kind !== "FPV");
+  const drones = allPlatforms.filter((p) => p.props.kind === "FPV");
+  const flying = drones.filter((d) => d.props.status !== "Ready" && d.props.status !== "Expended");
+  const readyCount = drones.filter((d) => d.props.status === "Ready").length;
+  const hits = store.list("Engagement").filter((e) => e.props.status === "Hit");
   const units = store.list("Unit").filter((u) => !store.linkedOne(u.id, "platformCarries", "reverse"));
   const tracks = store.list("Track");
   const radar = store.get(RADAR.id) as OntObject<"Sensor"> | undefined;
@@ -409,6 +414,37 @@ export function MapView() {
           ) : null,
         )}
 
+        {hits.map((e) => (
+          <g key={`hit-${e.id}`} transform={`translate(${e.props.aimPoint.x} ${e.props.aimPoint.y}) scale(${k})`} onClick={pick(e.id)} className="clickable">
+            <path d="M-4 -4L4 4M4 -4L-4 4" className={`impact ${sel(e.id) ? "selected" : ""}`} />
+            {(detail || sel(e.id)) && (
+              <text x={7} y={3} className="sym-label sym-label-sub">
+                {e.props.label}
+              </text>
+            )}
+          </g>
+        ))}
+        {flying.map((d) =>
+          d.props.waypoint ? (
+            <g key={`aim-${d.id}`}>
+              <line
+                x1={d.props.pos.x}
+                y1={d.props.pos.y}
+                x2={d.props.waypoint.x}
+                y2={d.props.waypoint.y}
+                className="route fpv"
+                vectorEffect="non-scaling-stroke"
+              />
+              <circle cx={d.props.waypoint.x} cy={d.props.waypoint.y} r={4 * k} className="aim" vectorEffect="non-scaling-stroke" />
+            </g>
+          ) : null,
+        )}
+        {layers.graphics && (
+          <text x={16} y={718} fontSize={9 / v.z} className="cm-label">
+            FPV VIPER {readyCount}/{drones.length} READY
+          </text>
+        )}
+
         {layers.plots &&
           world.sim.tracker.plots.map((p, i) => {
             const t = `translate(${p.pos.x} ${p.pos.y}) scale(${k})`;
@@ -520,6 +556,19 @@ export function MapView() {
             ]}
             selected={sel(p.id)}
             onPick={pick(p.id)}
+          />
+        ))}
+
+        {flying.map((d) => (
+          <AirSymbol
+            key={d.id}
+            x={d.props.pos.x}
+            y={d.props.pos.y}
+            k={k}
+            icon="fpv"
+            lines={[names || sel(d.id) ? d.props.callsign : null, detail || sel(d.id) ? d.props.status.toUpperCase() : null]}
+            selected={sel(d.id)}
+            onPick={pick(d.id)}
           />
         ))}
 
